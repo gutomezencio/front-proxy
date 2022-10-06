@@ -1,0 +1,14 @@
+.DS_Store
+node_modules/
+.vscode/
+.coverage/
+.nyc_output/
+yarn-debug.log
+yarn-error.log
+npm-debug.log
+.scannerwork/
+.sonarlint/
+/.idea/
+.scannerwork
+.sonarlint
+.package-lock.json

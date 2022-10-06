@@ -1,0 +1,5 @@
+{
+  "my-custom-domain.local": {
+    "port": 4000
+  }
+}
