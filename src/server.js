@@ -1,5 +1,5 @@
-import Hapi from 'hapi';
-import h2o2 from 'h2o2';
+import Hapi from '@hapi/hapi';
+import h2o2 from '@hapi/h2o2';
 import fs from 'fs';
 import tls from 'tls';
 import { execFileSync } from 'child_process';
@@ -18,8 +18,8 @@ const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 export default class Server {
   constructor() {
     this.hostFilePath = resolve('/', 'etc/hosts');
-    this.proxyHostsPath = resolve(__dirname, '../config/proxyHosts.json');
-    this.keysPath = resolve(__dirname, '../keys');
+    this.proxyHostsPath = resolve(import.meta.dirname, '../config/proxyHosts.json');
+    this.keysPath = resolve(import.meta.dirname, '../keys');
     this.proxyHosts = this.loadProxyHosts();
   }
 
@@ -89,7 +89,7 @@ export default class Server {
     const secureContexts = this.getSecureContexts();
     const defaultCert = this.readCert(defaultCertName);
 
-    this.ServerHTTP = new Hapi.server({
+    this.ServerHTTP = Hapi.server({
       port: 80,
     });
     this.startServer(this.ServerHTTP);
@@ -106,7 +106,7 @@ export default class Server {
       SNICallback: (servername, cb) => cb(null, secureContexts[servername]),
     };
 
-    this.ServerHTTPS = new Hapi.server({
+    this.ServerHTTPS = Hapi.server({
       port: 443,
       tls: this.tls,
       routes: {
