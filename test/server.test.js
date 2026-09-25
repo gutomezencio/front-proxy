@@ -1,8 +1,9 @@
+import { jest } from '@jest/globals'
 import fs from 'fs'
 import http from 'http'
 import os from 'os'
 import { join } from 'path'
-import Hapi from 'hapi'
+import Hapi from '@hapi/hapi'
 import Server from '../src/server.js'
 
 // Points a Server at temp files so tests never touch /etc/hosts or the real config.
@@ -84,7 +85,7 @@ describe('Server', () => {
     it('proxies a known host to its local port and returns 502 for unknown hosts', async () => {
       const server = createServer(dir, { 'my.local': { port: target.address().port } })
 
-      hapiServer = new Hapi.server({ port: 0 })
+      hapiServer = Hapi.server({ port: 0 })
       await server.startServer(hapiServer)
 
       const proxied = await hapiServer.inject({ url: '/page', headers: { host: 'my.local' } })

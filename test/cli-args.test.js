@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals'
 import { parseCliArgs } from '../src/cli-args.js'
 
 describe('parseCliArgs', () => {
