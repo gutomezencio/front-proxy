@@ -20,19 +20,19 @@ There are some alternatives to do it on a browser level, however, front-proxy ha
 - #### Add a domain to the proxy list:
 
 ```bash
-front-proxy --add local-dev.livedomain.com:3000
+front-proxy add local-dev.livedomain.com:3000
 ```
 
 - #### Remove a domain from the proxy list:
 
 ```bash
-front-proxy --remove local-dev.livedomain.com:3000
+front-proxy remove local-dev.livedomain.com:3000
 ```
 
 - #### List the domains in the proxy list:
 
 ```bash
-front-proxy --list
+front-proxy list
 ```
 
 - #### Run the proxy server:
@@ -56,13 +56,13 @@ HTTPS on port `443` needs locally trusted certificates. `front-proxy` creates th
 - #### Generate certs for every configured domain:
 
 ```bash
-front-proxy --generate-certs
+front-proxy generate-certs
 ```
 
 - #### Generate a cert for a single domain:
 
 ```bash
-front-proxy --generate-certs local-dev.livedomain.com
+front-proxy generate-certs local-dev.livedomain.com
 ```
 
 The command runs `mkcert -install` once, so browsers trust the local CA. Then it writes `keys/_private-<domain>-cert.pem` and `keys/_private-<domain>-key.pem` and sets a `cert` key on that domain in `config/proxyHosts.json`:

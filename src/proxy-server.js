@@ -1,12 +1,13 @@
 import Server from './server.js'
+import { parseCliArgs } from './cli-args.js'
 
 const ProxyServer = new Server()
-const cliArgs = require('yargs').argv
-const { add, remove, list, generateCerts } = cliArgs
 
 try {
-  if (add) {
-    const [host, port] = add.split(':')
+  const { command, value } = parseCliArgs()
+
+  if (command === 'add') {
+    const [host, port] = value.split(':')
 
     if (!host) {
       throw "You must pass a hostname and port if you want to add a proxy rule, eq.: myhost:3000"
@@ -20,14 +21,14 @@ try {
       host,
       port: parseInt(port)
     })
-  } else if (remove) {
-    const [host,] = remove.split(':')
+  } else if (command === 'remove') {
+    const [host,] = value.split(':')
 
     ProxyServer.remove(host)
-  } else if (list) {
+  } else if (command === 'list') {
     ProxyServer.list()
-  } else if (generateCerts) {
-    ProxyServer.generateCerts(generateCerts)
+  } else if (command === 'generate-certs') {
+    ProxyServer.generateCerts(value || true)
   } else {
     ProxyServer.start()
   }
