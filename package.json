@@ -4,6 +4,11 @@
   "type": "module",
   "main": "src/start.js",
   "license": "MIT",
+  "author": {
+    "name": "Guto Mezêncio",
+    "email": "gutomezencio@gmail.com"
+  },
+  "description": "Map/link custom local domains to apps running on local ports, at the OS level.",
   "scripts": {
     "dev": "node --watch src/proxy-server.js",
     "start": "node src/proxy-server.js",
