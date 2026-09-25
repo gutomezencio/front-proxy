@@ -1,29 +1,99 @@
 import Hapi from 'hapi';
 import h2o2 from 'h2o2';
 import fs from 'fs';
+import tls from 'tls';
+import { execFileSync } from 'child_process';
 import { resolve } from 'path';
-import proxyHosts from '../config/proxyHosts.json';
+
+const hostsFileMarker = (host) => `# > ${host} < Host added by front-proxy`;
+
+const defaultCertName = 'default';
+
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 export default class Server {
-  static tls;
-  static ServerHTTP;
-  static ServerHTTPS;
-  static hostFilePath;
-  static proxyHostsPath;
-
   constructor() {
     this.hostFilePath = resolve('/', 'etc/hosts');
     this.proxyHostsPath = resolve(__dirname, '../config/proxyHosts.json');
+    this.keysPath = resolve(__dirname, '../keys');
+    this.proxyHosts = this.loadProxyHosts();
+  }
+
+  loadProxyHosts() {
+    if (!fs.existsSync(this.proxyHostsPath)) {
+      return {};
+    }
+
+    return JSON.parse(fs.readFileSync(this.proxyHostsPath, 'utf8'));
+  }
+
+  saveProxyHosts(proxyHosts) {
+    this.proxyHosts = proxyHosts;
+    fs.writeFileSync(this.proxyHostsPath, `${JSON.stringify(proxyHosts, null, 2)}\n`);
+  }
+
+  getCertPaths(name) {
+    return {
+      cert: resolve(this.keysPath, `_private-${name}-cert.pem`),
+      key: resolve(this.keysPath, `_private-${name}-key.pem`),
+    };
+  }
+
+  readCert(name) {
+    const { cert, key } = this.getCertPaths(name);
+
+    if (!fs.existsSync(cert) || !fs.existsSync(key)) {
+      return null;
+    }
+
+    return { cert: fs.readFileSync(cert), key: fs.readFileSync(key) };
+  }
+
+  getSecureContexts() {
+    const contexts = {};
+
+    Object.keys(this.proxyHosts).forEach((host) => {
+      const { cert: certName } = this.proxyHosts[host];
+
+      if (!certName) {
+        return;
+      }
+
+      const certFiles = this.readCert(certName);
+
+      if (!certFiles) {
+        console.warn(
+          `Cert "${certName}" for ${host} not found in ${this.keysPath}. Using the default cert. Run "front-proxy --generate-certs ${host}" to create it.`,
+        );
+        return;
+      }
+
+      contexts[host] = tls.createSecureContext(certFiles);
+    });
+
+    return contexts;
   }
 
   start() {
-    this.tls = {
-      key: fs.readFileSync(resolve(__dirname, '../keys/example-key.pem')),
-      cert: fs.readFileSync(resolve(__dirname, '../keys/example-cert.pem')),
-    };
+    const secureContexts = this.getSecureContexts();
+    const defaultCert = this.readCert(defaultCertName);
+
     this.ServerHTTP = new Hapi.server({
       port: 80,
     });
+    this.startServer(this.ServerHTTP);
+
+    if (!defaultCert) {
+      return console.warn(
+        `No default cert found in ${this.keysPath}, so HTTPS (443) is disabled. Run "front-proxy --generate-certs" to create it.`,
+      );
+    }
+
+    // The default cert is used for hosts without their own "cert".
+    this.tls = {
+      ...defaultCert,
+      SNICallback: (servername, cb) => cb(null, secureContexts[servername]),
+    };
 
     this.ServerHTTPS = new Hapi.server({
       port: 443,
@@ -38,12 +108,12 @@ export default class Server {
         },
       },
     });
-
-    this.startServer(this.ServerHTTP);
     this.startServer(this.ServerHTTPS);
   }
 
   async startServer(server) {
+    const { proxyHosts } = this;
+
     await server.register({ plugin: h2o2 });
 
     server.route({
@@ -51,8 +121,17 @@ export default class Server {
       path: '/{path*}',
       options: {
         handler(request, h) {
+          const [host] = (request.headers.host || '').split(':');
+          const target = proxyHosts[host];
+
+          if (!target) {
+            return h
+              .response(`front-proxy: no proxy rule for host "${host}".`)
+              .code(502);
+          }
+
           return h.proxy({
-            ...proxyHosts[request.headers.host],
+            port: target.port,
             host: '127.0.0.1',
             passThrough: true,
             rejectUnauthorized: false,
@@ -79,98 +158,130 @@ export default class Server {
     console.log(`Server running ${serverInfo} ${tlsInfo}`);
   }
 
-  async getHostFileContent() {
-    const fileContent = await Promise.resolve(
-      fs.readFileSync(this.hostFilePath),
-    );
-
-    return fileContent.toString();
+  getHostFileContent() {
+    return fs.readFileSync(this.hostFilePath, 'utf8');
   }
 
-  async checkAlreadyExist(host) {
-    const hostFileContent = await this.getHostFileContent();
+  checkAlreadyExist(host) {
+    const hostLine = new RegExp(`^127\\.0\\.0\\.1\\s+${escapeRegExp(host)}\\s*$`, 'm');
 
-    return hostFileContent.includes(`127.0.0.1 ${host}`);
+    return hostLine.test(this.getHostFileContent());
   }
 
-  async add({ host, port }) {
-    const hasTheHostInOS = await this.checkAlreadyExist(host);
-
-    if (!hasTheHostInOS && !proxyHosts[host]) {
-      await Promise.resolve(
-        fs.appendFileSync(
-          this.hostFilePath,
-          `\r\n# > ${host} < Host added by front-proxy\r\n127.0.0.1 ${host}`,
-        ),
-      );
-      let newProxyHostsFile = {
-        ...proxyHosts,
-      };
-
-      newProxyHostsFile[host] = {
-        port,
-      };
-
-      await Promise.resolve(
-        fs.writeFileSync(
-          this.proxyHostsPath,
-          JSON.stringify(newProxyHostsFile, null, 2),
-        ),
-      );
-      return console.log(
-        `The host ${host}:${port} was successfull added to config.`,
-      );
-    } else {
+  add({ host, port }) {
+    if (this.checkAlreadyExist(host) || this.proxyHosts[host]) {
       return console.error(
         `The current host is already added. Provide another one.`,
       );
     }
+
+    fs.appendFileSync(
+      this.hostFilePath,
+      `\n${hostsFileMarker(host)}\n127.0.0.1 ${host}\n`,
+    );
+
+    const { cert, key } = this.getCertPaths(host);
+    const hasCert = fs.existsSync(cert) && fs.existsSync(key);
+
+    this.saveProxyHosts({
+      ...this.proxyHosts,
+      [host]: hasCert ? { port, cert: host } : { port },
+    });
+
+    return console.log(
+      `The host ${host}:${port} was successfully added to config.`,
+    );
   }
 
-  async remove(host) {
-    const hasTheHostInOS = await this.checkAlreadyExist(host);
-
-    if (hasTheHostInOS && proxyHosts[host]) {
-      let hostFileContent = await this.getHostFileContent();
-
-      hostFileContent = hostFileContent.replace(
-        `\n# > ${host} < Host added by front-proxy\n127.0.0.1 ${host}`,
-        '',
-      );
-      await Promise.resolve(
-        fs.writeFileSync(this.hostFilePath, hostFileContent),
-      );
-
-      const { [host]: _, ...newProxyHostsFile } = proxyHosts;
-
-      await Promise.resolve(
-        fs.writeFileSync(
-          this.proxyHostsPath,
-          JSON.stringify(newProxyHostsFile, null, 2),
-        ),
-      );
-    } else {
+  remove(host) {
+    if (!this.checkAlreadyExist(host) || !this.proxyHosts[host]) {
       return console.error(
         `Can't find the host "${host}" in your OS hosts file or in front-proxy config. Please, check the host name and try again.`,
       );
     }
+
+    // Also matches entries written with \r\n by older versions.
+    const hostBlock = new RegExp(
+      `\\r?\\n${escapeRegExp(hostsFileMarker(host))}\\r?\\n127\\.0\\.0\\.1 ${escapeRegExp(host)}(\\r?\\n)?`,
+    );
+
+    fs.writeFileSync(
+      this.hostFilePath,
+      this.getHostFileContent().replace(hostBlock, ''),
+    );
+
+    const { [host]: _, ...newProxyHosts } = this.proxyHosts;
+
+    this.saveProxyHosts(newProxyHosts);
+
+    return console.log(`The host ${host} was successfully removed.`);
   }
 
-  async list() {
-    const hostsArray = Object.keys(proxyHosts);
+  list() {
+    const hostsArray = Object.keys(this.proxyHosts);
 
-    if (hostsArray.length > 0) {
-      hostsArray.forEach((item) => {
-        console.log(`HOST: ${item} | PORT: ${proxyHosts[item].port}`);
-      });
-    } else {
+    if (hostsArray.length === 0) {
       return console.error(`Can't find any hosts configured.`);
     }
+
+    hostsArray.forEach((item) => {
+      const { port, cert } = this.proxyHosts[item];
+
+      console.log(
+        `HOST: ${item} | PORT: ${port}${cert ? ` | CERT: ${cert}` : ''}`,
+      );
+    });
   }
 
-  async generateCertificate() {
-    console.log(
-      `I can't auto generate certs for SSL.\nPlease, visit https://github.com/FiloSottile/mkcert and follow the instructions to make your own certs.`,
-    );
+  generateCerts(target) {
+    try {
+      execFileSync('mkcert', ['-help'], { stdio: 'ignore' });
+    } catch (err) {
+      return console.error(
+        `mkcert was not found in your PATH.\nInstall it with "brew install mkcert" (macOS) or follow https://github.com/FiloSottile/mkcert#installation, then try again.`,
+      );
+    }
+
+    const hosts =
+      typeof target === 'string' ? [target] : Object.keys(this.proxyHosts);
+
+    if (hosts.length === 0) {
+      return console.error(
+        `Can't find any hosts configured. Pass a host, eq.: --generate-certs myhost.local`,
+      );
+    }
+
+    // Installs the local CA into the system trust store (no-op if already installed).
+    execFileSync('mkcert', ['-install'], { stdio: 'inherit' });
+
+    if (!this.readCert(defaultCertName)) {
+      const { cert, key } = this.getCertPaths(defaultCertName);
+
+      execFileSync(
+        'mkcert',
+        ['-cert-file', cert, '-key-file', key, 'localhost', '127.0.0.1', '::1'],
+        { stdio: 'inherit' },
+      );
+    }
+
+    const proxyHosts = { ...this.proxyHosts };
+
+    hosts.forEach((host) => {
+      const { cert, key } = this.getCertPaths(host);
+
+      execFileSync('mkcert', ['-cert-file', cert, '-key-file', key, host], {
+        stdio: 'inherit',
+      });
+
+      if (proxyHosts[host]) {
+        proxyHosts[host] = { ...proxyHosts[host], cert: host };
+      } else {
+        console.warn(
+          `${host} is not in the proxy config yet. Add it with "front-proxy --add ${host}:<port>" and set "cert": "${host}".`,
+        );
+      }
+    });
+
+    this.saveProxyHosts(proxyHosts);
   }
 }

@@ -27,7 +27,7 @@ try {
   } else if (list) {
     ProxyServer.list()
   } else if (generateCerts) {
-    ProxyServer.generateCerts()
+    ProxyServer.generateCerts(generateCerts)
   } else {
     ProxyServer.start()
   }

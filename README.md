@@ -49,20 +49,40 @@ Considering the `80` port is protect by default on a OS level, `front-proxy` wil
 
 Just run `npm start` and it will behave the same as running the `front-proxy` command directly
 
-### Self-signed certificate for HTTPS requests
+### HTTPS certificates
 
-To use HTTPS locally it requires a self-signed certificate. That will be used to handle access in the `443` port.
+HTTPS on port `443` needs locally trusted certificates. `front-proxy` creates them with [mkcert](https://github.com/filosottile/mkcert), so install it first (`brew install mkcert` on macOS, or follow the instructions in their repo).
 
-You can use [mkcert](https://github.com/filosottile/mkcert) to generate your self-signed certificate. You can install it by following the instructions from their GitHub repo https://github.com/filosottile/mkcert.
+- #### Generate certs for every configured domain:
 
-Replace the `[my-domain]` and `mydomain.com` placeholders by the wanted local domain.
+```bash
+front-proxy --generate-certs
+```
+
+- #### Generate a cert for a single domain:
+
+```bash
+front-proxy --generate-certs local-dev.livedomain.com
+```
+
+The command runs `mkcert -install` once, so browsers trust the local CA. Then it writes `keys/_private-<domain>-cert.pem` and `keys/_private-<domain>-key.pem` and sets a `cert` key on that domain in `config/proxyHosts.json`:
+
+```json
+{
+  "local-dev.livedomain.com": {
+    "port": 3000,
+    "cert": "local-dev.livedomain.com"
+  }
+}
+```
+
+`cert` holds the `<name>` part of `keys/_private-<name>-{cert,key}.pem`, so you can point several domains at the same cert (a wildcard cert, for example). It also creates a default cert (`keys/_private-default-*.pem`, for `localhost`) the first time. Domains without a `cert` key use the default cert. If there is no default cert, the proxy starts on HTTP only.
+
+To make a cert by hand (a wildcard, for example), use the same naming and set `cert` to `<name>`:
 
 ```bash
 mkcert \
-  -cert-file keys/_private-[my-domain]-cert.pem \
-  -key-file  keys/_private-[my-domain]-key.pem \
-  "*.mydomain.com" \
-  localhost \
-  127.0.0.1 \
-  ::1
+  -cert-file keys/_private-mydomain-cert.pem \
+  -key-file  keys/_private-mydomain-key.pem \
+  "*.mydomain.com"
 ```
