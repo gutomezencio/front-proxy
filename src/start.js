@@ -1,21 +1,14 @@
 import { spawn } from 'child_process';
 import { basename, resolve } from 'path';
-const cliArgs = require('yargs').argv;
-const { add, remove, list, generateCerts } = cliArgs;
-let commandArgs = [];
+import { parseCliArgs } from './cli-args.js';
 
-if (add) {
-  commandArgs = ['--add', add];
-} else if (remove) {
-  commandArgs = ['--remove', remove];
-} else if (list) {
-  commandArgs = ['--list'];
-} else if (generateCerts) {
-  commandArgs =
-    typeof generateCerts === 'string'
-      ? ['--generate-certs', generateCerts]
-      : ['--generate-certs'];
-}
+// yargs prints usage and exits here on a bad command, before any sudo prompt.
+const { command, value } = parseCliArgs();
+
+const commandArgs =
+  command === 'start'
+    ? []
+    : [command, ...(value === undefined ? [] : [value])];
 
 const proxyServerPath = resolve(__dirname, 'proxy-server.js');
 
@@ -30,7 +23,7 @@ const nodeArgs =
 
 const init = () => {
   // mkcert must run as the current user so its CA lands in the user's CAROOT.
-  const requiresSudo = !list && !generateCerts;
+  const requiresSudo = command !== 'list' && command !== 'generate-certs';
 
   if (requiresSudo) {
     console.log(
@@ -39,11 +32,11 @@ const init = () => {
   }
 
   // process.execPath: sudo's secure_path usually doesn't include Homebrew/nvm node.
-  const [command, args] = requiresSudo
+  const [executable, args] = requiresSudo
     ? ['sudo', [process.execPath, ...nodeArgs, ...commandArgs]]
     : [process.execPath, [...nodeArgs, ...commandArgs]];
 
-  const child = spawn(command, args, { stdio: 'inherit' });
+  const child = spawn(executable, args, { stdio: 'inherit' });
 
   child.on('exit', (code) => {
     process.exitCode = code;

@@ -11,7 +11,7 @@ const defaultCertName = 'default';
 
 // Written as the first key of config/proxyHosts.json; keys starting with "$" are not hosts.
 const proxyHostsComment =
-  'front-proxy hosts: { "<domain>": { "port": <local port>, "cert": "<name>" } }. Managed by --add / --remove / --generate-certs. "cert" is optional and points to keys/_private-<name>-{cert,key}.pem.';
+  'front-proxy hosts: { "<domain>": { "port": <local port>, "cert": "<name>" } }. Managed by `front-proxy add` / `remove` / `generate-certs`. "cert" is optional and points to keys/_private-<name>-{cert,key}.pem.';
 
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -74,7 +74,7 @@ export default class Server {
 
       if (!certFiles) {
         console.warn(
-          `Cert "${certName}" for ${host} not found in ${this.keysPath}. Using the default cert. Run "front-proxy --generate-certs ${host}" to create it.`,
+          `Cert "${certName}" for ${host} not found in ${this.keysPath}. Using the default cert. Run "front-proxy generate-certs ${host}" to create it.`,
         );
         return;
       }
@@ -96,7 +96,7 @@ export default class Server {
 
     if (!defaultCert) {
       return console.warn(
-        `No default cert found in ${this.keysPath}, so HTTPS (443) is disabled. Run "front-proxy --generate-certs" to create it.`,
+        `No default cert found in ${this.keysPath}, so HTTPS (443) is disabled. Run "front-proxy generate-certs" to create it.`,
       );
     }
 
@@ -258,7 +258,7 @@ export default class Server {
 
     if (hosts.length === 0) {
       return console.error(
-        `Can't find any hosts configured. Pass a host, eq.: --generate-certs myhost.local`,
+        `Can't find any hosts configured. Pass a host, eq.: front-proxy generate-certs myhost.local`,
       );
     }
 
@@ -288,7 +288,7 @@ export default class Server {
         proxyHosts[host] = { ...proxyHosts[host], cert: host };
       } else {
         console.warn(
-          `${host} is not in the proxy config yet. Add it with "front-proxy --add ${host}:<port>" and set "cert": "${host}".`,
+          `${host} is not in the proxy config yet. Add it with "front-proxy add ${host}:<port>" and set "cert": "${host}".`,
         );
       }
     });
