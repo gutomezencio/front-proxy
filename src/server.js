@@ -3,23 +3,26 @@ import h2o2 from '@hapi/h2o2';
 import fs from 'fs';
 import tls from 'tls';
 import { execFileSync } from 'child_process';
-import { resolve } from 'path';
+import { dirname, resolve } from 'path';
+import { getConfigDir } from './config-dir.js';
 
 const hostsFileMarker = (host) => `# > ${host} < Host added by front-proxy`;
 
 const defaultCertName = 'default';
 
-// Written as the first key of config/proxyHosts.json; keys starting with "$" are not hosts.
+// Written as the first key of proxyHosts.json; keys starting with "$" are not hosts.
 const proxyHostsComment =
-  'front-proxy hosts: { "<domain>": { "port": <local port>, "cert": "<name>" } }. Managed by `front-proxy add` / `remove` / `generate-certs`. "cert" is optional and points to keys/_private-<name>-{cert,key}.pem.';
+  'front-proxy hosts: { "<domain>": { "port": <local port>, "cert": "<name>" } }. Managed by `front-proxy add` / `remove` / `generate-certs`. "cert" is optional and points to keys/_private-<name>-{cert,key}.pem, next to this file.';
 
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 export default class Server {
   constructor() {
     this.hostFilePath = resolve('/', 'etc/hosts');
-    this.proxyHostsPath = resolve(import.meta.dirname, '../config/proxyHosts.json');
-    this.keysPath = resolve(import.meta.dirname, '../keys');
+    const configDir = getConfigDir();
+
+    this.proxyHostsPath = resolve(configDir, 'proxyHosts.json');
+    this.keysPath = resolve(configDir, 'keys');
     this.proxyHosts = this.loadProxyHosts();
   }
 
@@ -37,6 +40,7 @@ export default class Server {
 
   saveProxyHosts(proxyHosts) {
     this.proxyHosts = proxyHosts;
+    fs.mkdirSync(dirname(this.proxyHostsPath), { recursive: true });
     fs.writeFileSync(
       this.proxyHostsPath,
       `${JSON.stringify({ $comment: proxyHostsComment, ...proxyHosts }, null, 2)}\n`,
@@ -261,6 +265,8 @@ export default class Server {
         `Can't find any hosts configured. Pass a host, eq.: front-proxy generate-certs myhost.local`,
       );
     }
+
+    fs.mkdirSync(this.keysPath, { recursive: true });
 
     // Installs the local CA into the system trust store (no-op if already installed).
     execFileSync('mkcert', ['-install'], { stdio: 'inherit' });

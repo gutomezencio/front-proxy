@@ -1,5 +1,7 @@
 # front-proxy
 
+[![npm](https://img.shields.io/npm/v/front-proxy)](https://www.npmjs.com/package/front-proxy)
+
 Map local domains (like `local-dev.livedomain.com`) to apps running on local ports, at the OS level.
 
 `front-proxy` runs a reverse proxy on ports `80` and `443` and adds your domains to `/etc/hosts`. Every browser and tool on your machine then reaches your local app through the real-looking domain.
@@ -17,14 +19,22 @@ Some third-party services only accept requests from an allowlist of domains (Str
 ## Installation
 
 ```bash
-git clone git@github.com:gutomezencio/front-proxy.git
-cd front-proxy
-npm install
-// Install it as a package on your machine
-npm install -g .
+npm install -g front-proxy
 ```
 
-The `front-proxy` command is now available in your terminal. It's linked to the clone, so keep the folder in place. To update, run `git pull` and then `npm install`.
+The `front-proxy` command is now available in your terminal.
+
+If `npm install -g` fails with `EACCES`, your npm global folder is owned by root. That's common with the system Node on Linux or the official macOS installer. Use a Node installed with [nvm](https://github.com/nvm-sh/nvm) or Homebrew, or run `sudo npm install -g front-proxy`.
+
+To update:
+
+```bash
+npm update -g front-proxy
+```
+
+Your domains and certificates live in `~/.front-proxy` (see [Configuration](#configuration)), so updates and reinstalls keep them.
+
+To run it from a clone instead, see [Development](#development).
 
 ## Usage
 
@@ -63,18 +73,20 @@ HTTPS responses include an HSTS header (`includeSubDomains`, `preload`), so brow
 
 ### Custom certificates
 
-To use your own certificate (a wildcard, for example), save it in `keys/` as `_private-<name>-cert.pem` and `_private-<name>-key.pem`, then set `"cert": "<name>"` on each domain that should use it:
+To use your own certificate (a wildcard, for example), save it in `~/.front-proxy/keys/` as `_private-<name>-cert.pem` and `_private-<name>-key.pem`, then set `"cert": "<name>"` on each domain that should use it:
 
 ```bash
 mkcert \
-  -cert-file keys/_private-mydomain-cert.pem \
-  -key-file  keys/_private-mydomain-key.pem \
+  -cert-file ~/.front-proxy/keys/_private-mydomain-cert.pem \
+  -key-file  ~/.front-proxy/keys/_private-mydomain-key.pem \
   "*.mydomain.com"
 ```
 
 ## Configuration
 
-Domains are stored in `config/proxyHosts.json` and certificates in `keys/`. `npm install -g .` links the global command to your clone, so both folders live in the cloned repo. The commands above manage the config, but you can also edit it by hand:
+Domains are stored in `~/.front-proxy/proxyHosts.json` and certificates in `~/.front-proxy/keys/`. The folder is created on the first run. To keep it somewhere else, set the `FRONT_PROXY_HOME` environment variable.
+
+The commands above manage the config, but you can also edit it by hand:
 
 ```json
 {
@@ -85,24 +97,47 @@ Domains are stored in `config/proxyHosts.json` and certificates in `keys/`. `npm
 }
 ```
 
-| Key    | Description                                                                                          |
-| ------ | ---------------------------------------------------------------------------------------------------- |
-| `port` | Local port the domain is proxied to, on `127.0.0.1`                                                  |
-| `cert` | Optional. Points to `keys/_private-<cert>-{cert,key}.pem`. Several domains can share one certificate |
+| Key    | Description                                                                                                         |
+| ------ | ------------------------------------------------------------------------------------------------------------------- |
+| `port` | Local port the domain is proxied to, on `127.0.0.1`                                                                 |
+| `cert` | Optional. Points to `~/.front-proxy/keys/_private-<cert>-{cert,key}.pem`. Several domains can share one certificate |
 
 Keys starting with `$` (like the `$comment` the CLI writes) are ignored.
 
-## Development
+## Uninstalling
+
+Remove your domains first, so their entries are cleaned from `/etc/hosts`:
 
 ```bash
+front-proxy list                   # see what's configured
+front-proxy remove <host>          # for each domain
+npm uninstall -g front-proxy
+rm -rf ~/.front-proxy              # config and certificates
+mkcert -uninstall                  # optional: remove mkcert's local CA
+```
+
+## Development
+
+To use `front-proxy` from a clone, or to work on it:
+
+```bash
+git clone git@github.com:gutomezencio/front-proxy.git
+cd front-proxy
 npm install
+npm link    # point the global `front-proxy` command at this clone
+```
+
+If you installed the npm package before, run `npm uninstall -g front-proxy` first so the two don't clash. `npm link` links the global command to the clone, so keep the folder in place and run `git pull` to update. `npm unlink -g front-proxy` removes the link. The clone uses the same `~/.front-proxy` config as the npm package.
+
+```bash
 npm start                    # run the proxy from src/, without the sudo wrapper
 npm run dev                  # same, restarting on file changes
 npm run start:root -- list   # run through the sudo wrapper, like the installed CLI
 npm test                     # run the tests
+npm pack --dry-run           # list the files that get published to npm
 ```
 
-The code is plain ES modules and runs directly, with no build step.
+The code is plain ES modules and runs directly, with no build step. Only `src/`, `README.md`, `LICENSE` and `package.json` are published (the `files` field in `package.json`).
 
 ## License
 
