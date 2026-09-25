@@ -1,71 +1,80 @@
-# Front-Proxy
+# front-proxy
 
-Proxy for dynamic handle of local domains usage for front-end applications running locally on different ports.
+Map local domains (like `local-dev.livedomain.com`) to apps running on local ports, at the OS level.
 
-### How it works?
+`front-proxy` runs a reverse proxy on ports `80` and `443` and adds your domains to `/etc/hosts`. Every browser and tool on your machine then reaches your local app through the real-looking domain.
 
-A Node.js server will connect into your local `80` and `443` ports, making a proxy forward of the requests from specified local domains (like from `local-dev.livedomain.com`) to local apps running on specified ports.
-That is useful when working with third-party services which only accepts requests from allowed domain list, like Stripe, GTM and also to workaround CORS protection when requesting an API.
+## Why
 
-There are some alternatives to do it on a browser level, however, front-proxy handles it on a OS level, allowing you to use your apps in different browsers and applications, and for instance making the path clear for a playwright chrome browser test running without any configuration tweak.
+Some third-party services only accept requests from an allowlist of domains (Stripe and Google Tag Manager, for example), and some APIs block `localhost` with CORS. Browser extensions can fake a domain for one browser. `front-proxy` works for the whole OS, so it also covers other browsers, CLI tools and headless Playwright runs with no extra configuration.
 
-### Setup:
+## Requirements
 
-1. Install the dependencies by running `npm install`.
-2. Add it to your global packages, by running `npm install -g`
-3. Done! Now you can run it by the `front-proxy` command on your terminal
+- Node.js 22.12 or newer
+- macOS or Linux (it edits `/etc/hosts` and uses `sudo`)
+- [mkcert](https://github.com/FiloSottile/mkcert), only for HTTPS (`brew install mkcert` on macOS)
 
-### Usage:
-
-- #### Add a domain to the proxy list:
+## Installation
 
 ```bash
-front-proxy add local-dev.livedomain.com:3000
+git clone git@github.com:gutomezencio/front-proxy.git
+cd front-proxy
+npm install
+// Install it as a package on your machine
+npm install -g .
 ```
 
-- #### Remove a domain from the proxy list:
+The `front-proxy` command is now available in your terminal. It's linked to the clone, so keep the folder in place. To update, run `git pull` and then `npm install`.
+
+## Usage
 
 ```bash
-front-proxy remove local-dev.livedomain.com:3000
+front-proxy add local-dev.livedomain.com:3000   # map a domain to a local port
+front-proxy                                     # start the proxy
 ```
 
-- #### List the domains in the proxy list:
+Then open `http://local-dev.livedomain.com` (or `https://` once you've [set up certificates](#https)).
+
+| Command                             | Description                                                          | Needs sudo |
+| ----------------------------------- | -------------------------------------------------------------------- | ---------- |
+| `front-proxy`                       | Start the proxy on ports `80` and `443`                              | Yes        |
+| `front-proxy add <host:port>`       | Add a domain to `/etc/hosts` and the proxy config                    | Yes        |
+| `front-proxy remove <host>`         | Remove a domain from `/etc/hosts` and the proxy config               | Yes        |
+| `front-proxy list`                  | List the configured domains                                          | No         |
+| `front-proxy generate-certs [host]` | Create HTTPS certificates with mkcert, for one domain or all of them | No         |
+| `front-proxy --help`                | Show the help                                                        | No         |
+
+Commands that edit `/etc/hosts` or bind ports `80`/`443` ask for your password through `sudo`. The password isn't stored.
+
+Requests for a domain that isn't configured get a `502` response.
+
+## HTTPS
+
+HTTPS on port `443` needs locally trusted certificates, which `front-proxy` creates with mkcert:
 
 ```bash
-front-proxy list
+front-proxy generate-certs                            # every configured domain
+front-proxy generate-certs local-dev.livedomain.com   # a single domain
 ```
 
-- #### Run the proxy server:
+The first run installs mkcert's local CA so browsers trust the certificates. It also creates a default certificate for `localhost`. Each domain then gets its own certificate, which the proxy serves through SNI. Domains without their own certificate fall back to the default one. If there's no default certificate, the proxy starts with HTTP only.
+
+HTTPS responses include an HSTS header (`includeSubDomains`, `preload`), so browsers remember to use HTTPS for those domains.
+
+### Custom certificates
+
+To use your own certificate (a wildcard, for example), save it in `keys/` as `_private-<name>-cert.pem` and `_private-<name>-key.pem`, then set `"cert": "<name>"` on each domain that should use it:
 
 ```bash
-front-proxy
+mkcert \
+  -cert-file keys/_private-mydomain-cert.pem \
+  -key-file  keys/_private-mydomain-key.pem \
+  "*.mydomain.com"
 ```
 
-### 80 Port access
+## Configuration
 
-Considering the `80` port is protect by default on a OS level, `front-proxy` will prompt your sudo password (it won't be stored) to be able to intercept requests from the `80` port and also to update your `hosts` file by automatically adding your custom local domains there.
-
-### Local development & workspace running:
-
-Just run `npm start` and it will behave the same as running the `front-proxy` command directly
-
-### HTTPS certificates
-
-HTTPS on port `443` needs locally trusted certificates. `front-proxy` creates them with [mkcert](https://github.com/filosottile/mkcert), so install it first (`brew install mkcert` on macOS, or follow the instructions in their repo).
-
-- #### Generate certs for every configured domain:
-
-```bash
-front-proxy generate-certs
-```
-
-- #### Generate a cert for a single domain:
-
-```bash
-front-proxy generate-certs local-dev.livedomain.com
-```
-
-The command runs `mkcert -install` once, so browsers trust the local CA. Then it writes `keys/_private-<domain>-cert.pem` and `keys/_private-<domain>-key.pem` and sets a `cert` key on that domain in `config/proxyHosts.json`:
+Domains are stored in `config/proxyHosts.json` and certificates in `keys/`. `npm install -g .` links the global command to your clone, so both folders live in the cloned repo. The commands above manage the config, but you can also edit it by hand:
 
 ```json
 {
@@ -76,13 +85,25 @@ The command runs `mkcert -install` once, so browsers trust the local CA. Then it
 }
 ```
 
-`cert` holds the `<name>` part of `keys/_private-<name>-{cert,key}.pem`, so you can point several domains at the same cert (a wildcard cert, for example). It also creates a default cert (`keys/_private-default-*.pem`, for `localhost`) the first time. Domains without a `cert` key use the default cert. If there is no default cert, the proxy starts on HTTP only.
+| Key    | Description                                                                                          |
+| ------ | ---------------------------------------------------------------------------------------------------- |
+| `port` | Local port the domain is proxied to, on `127.0.0.1`                                                  |
+| `cert` | Optional. Points to `keys/_private-<cert>-{cert,key}.pem`. Several domains can share one certificate |
 
-To make a cert by hand (a wildcard, for example), use the same naming and set `cert` to `<name>`:
+Keys starting with `$` (like the `$comment` the CLI writes) are ignored.
+
+## Development
 
 ```bash
-mkcert \
-  -cert-file keys/_private-mydomain-cert.pem \
-  -key-file  keys/_private-mydomain-key.pem \
-  "*.mydomain.com"
+npm install
+npm start                    # run the proxy from src/, without the sudo wrapper
+npm run dev                  # same, restarting on file changes
+npm run start:root -- list   # run through the sudo wrapper, like the installed CLI
+npm test                     # run the tests
 ```
+
+The code is plain ES modules and runs directly, with no build step.
+
+## License
+
+MIT

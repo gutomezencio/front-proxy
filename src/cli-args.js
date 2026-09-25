@@ -1,4 +1,4 @@
-const yargs = require('yargs')
+import yargs from 'yargs'
 
 // Returns { command, value }. Running with no command means "start the servers".
 export const parseCliArgs = (args = process.argv.slice(2)) => {
