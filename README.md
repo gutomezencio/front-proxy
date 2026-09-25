@@ -17,17 +17,37 @@ There are some alternatives to do it on a browser level, however, front-proxy ha
 
 ### Usage:
 
-#### Adding a domain to the proxy list
+- #### Add a domain to the proxy list:
 
-`front-proxy --add
+```bash
+front-proxy --add local-dev.livedomain.com:3000
+```
+
+- #### Remove a domain from the proxy list:
+
+```bash
+front-proxy --remove local-dev.livedomain.com:3000
+```
+
+- #### List the domains in the proxy list:
+
+```bash
+front-proxy --list
+```
+
+- #### Run the proxy server:
+
+```bash
+front-proxy
+```
 
 ### 80 Port access
 
-Considering the `80` port is protect by default on a OS level, `front-proxy` will prompt your sudo password (it won't be stored) to be able to intercept from it and also to update your `hosts` file by automatically adding your custom local domains there.
+Considering the `80` port is protect by default on a OS level, `front-proxy` will prompt your sudo password (it won't be stored) to be able to intercept requests from the `80` port and also to update your `hosts` file by automatically adding your custom local domains there.
 
 ### Local development & workspace running:
 
-- Just run `npm start` and it will behave the same as running the `front-proxy` command directly
+Just run `npm start` and it will behave the same as running the `front-proxy` command directly
 
 ### Self-signed certificate for HTTPS requests
 
@@ -37,7 +57,7 @@ You can use [mkcert](https://github.com/filosottile/mkcert) to generate your sel
 
 Replace the `[my-domain]` and `mydomain.com` placeholders by the wanted local domain.
 
-```
+```bash
 mkcert \
   -cert-file keys/_private-[my-domain]-cert.pem \
   -key-file  keys/_private-[my-domain]-key.pem \
