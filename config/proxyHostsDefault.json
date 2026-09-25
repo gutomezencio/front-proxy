@@ -1,6 +1,0 @@
-{
-  "my-custom-domain.local": {
-    "port": 4000,
-    "cert": "my-custom-domain.local"
-  }
-}

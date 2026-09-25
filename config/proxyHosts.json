@@ -1,7 +1,0 @@
-{
-  "$comment": "front-proxy hosts: { \"<domain>\": { \"port\": <local port>, \"cert\": \"<name>\" } }. Managed by `front-proxy add` / `remove` / `generate-certs`. \"cert\" is optional and points to keys/_private-<name>-{cert,key}.pem.",
-  "local.cooldomain.com": {
-    "port": 1313,
-    "cert": "local.cooldomain.com"
-  }
-}

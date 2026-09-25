@@ -34,6 +34,19 @@ describe('Server', () => {
     fs.rmSync(dir, { recursive: true, force: true })
   })
 
+  it('keeps the config and keys in FRONT_PROXY_HOME', () => {
+    process.env.FRONT_PROXY_HOME = dir
+
+    try {
+      const server = new Server()
+
+      expect(server.proxyHostsPath).toBe(join(dir, 'proxyHosts.json'))
+      expect(server.keysPath).toBe(join(dir, 'keys'))
+    } finally {
+      delete process.env.FRONT_PROXY_HOME
+    }
+  })
+
   it('loads hosts from the config and ignores the $comment key', () => {
     const server = createServer(dir, { 'my.local': { port: 3000 } })
 
