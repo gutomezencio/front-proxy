@@ -33,7 +33,7 @@ Execution chain for the installed CLI:
 2. `start.js` rebuilds the CLI args and `spawn`s `proxy-server.js` with `process.execPath` and `stdio: 'inherit'`. Under `src/` it goes through babel-node; under `dist/` it uses plain node. `add`, `remove` and `start` run under `sudo`. `list` and `generate-certs` don't: mkcert must run as the user so its CA ends up in the user's CAROOT.
 3. `proxy-server.js` parses args with yargs and dispatches to a `Server` method.
 4. `server.js` (`Server` class) does all the work:
-   - `config/proxyHosts.json` is read at runtime with `fs` (`loadProxyHosts` / `saveProxyHosts`), never `import`ed, so rollup doesn't bundle it. Keep it that way.
+   - `config/proxyHosts.json` is read at runtime with `fs` (`loadProxyHosts` / `saveProxyHosts`), never `import`ed, so rollup doesn't bundle it. Keep it that way. It is plain JSON; keys starting with `$` (the `$comment` that `saveProxyHosts` always writes first) are ignored by `loadProxyHosts`.
    - `start()` runs HTTP on :80 and, if the default cert exists, HTTPS on :443. The catch-all route looks up the `Host` header (port stripped) in `proxyHosts` and proxies to `127.0.0.1:<port>`. Unknown hosts get a 502.
    - Per-domain TLS uses SNI. `"cert": "<name>"` on a host points to `keys/_private-<name>-{cert,key}.pem`, and `getSecureContexts()` builds one `tls.createSecureContext` per host for the `SNICallback`. Hosts without a cert use `keys/_private-default-*.pem`.
    - `generateCerts(target)` shells out to the `mkcert` binary with `execFileSync`. It runs `-install`, creates the default cert if it's missing, creates one cert per host (or for all hosts), and sets `cert` in the config.

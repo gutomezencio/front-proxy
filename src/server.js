@@ -9,6 +9,10 @@ const hostsFileMarker = (host) => `# > ${host} < Host added by front-proxy`;
 
 const defaultCertName = 'default';
 
+// Written as the first key of config/proxyHosts.json; keys starting with "$" are not hosts.
+const proxyHostsComment =
+  'front-proxy hosts: { "<domain>": { "port": <local port>, "cert": "<name>" } }. Managed by --add / --remove / --generate-certs. "cert" is optional and points to keys/_private-<name>-{cert,key}.pem.';
+
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 export default class Server {
@@ -24,12 +28,19 @@ export default class Server {
       return {};
     }
 
-    return JSON.parse(fs.readFileSync(this.proxyHostsPath, 'utf8'));
+    const config = JSON.parse(fs.readFileSync(this.proxyHostsPath, 'utf8'));
+
+    return Object.keys(config)
+      .filter((key) => !key.startsWith('$'))
+      .reduce((hosts, key) => ({ ...hosts, [key]: config[key] }), {});
   }
 
   saveProxyHosts(proxyHosts) {
     this.proxyHosts = proxyHosts;
-    fs.writeFileSync(this.proxyHostsPath, `${JSON.stringify(proxyHosts, null, 2)}\n`);
+    fs.writeFileSync(
+      this.proxyHostsPath,
+      `${JSON.stringify({ $comment: proxyHostsComment, ...proxyHosts }, null, 2)}\n`,
+    );
   }
 
   getCertPaths(name) {
