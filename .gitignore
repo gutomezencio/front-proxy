@@ -12,3 +12,5 @@ npm-debug.log
 .scannerwork
 .sonarlint
 .package-lock.json
+keys/private-*
+keys/_private-*
