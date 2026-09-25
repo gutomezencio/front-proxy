@@ -1,5 +1,5 @@
 {
-  "local.firstleaf.dev": {
-    "port": 8000
+  "example.local": {
+    "port": 4000
   }
 }
