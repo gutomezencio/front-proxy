@@ -14,6 +14,7 @@ npm start                      # babel-node src/proxy-server.js (run the proxy, 
 npm run dev                    # same thing, under nodemon
 npm run start:root             # src/start.js: re-runs proxy-server.js under sudo (like the real CLI)
 npm run build                  # rollup -> dist/ (dist/ is committed and is what the `bin` runs)
+npm test                       # jest, tests in test/ (npx jest test/server.test.js for one file)
 
 # CLI commands (same for `front-proxy`, `npm run start:root --`, or `babel-node src/proxy-server.js`)
 front-proxy add host:port
@@ -23,7 +24,7 @@ front-proxy generate-certs [host]     # needs the mkcert binary on PATH
 front-proxy                           # start the servers
 ```
 
-The repo has no tests and no linter. The eslint plugin is commented out in `build/rollup.config.js`. Rebuild `dist/` after changing `src/`, because the installed CLI only runs `dist/`.
+Tests use Jest (transpiled through `.babelrc` by babel-jest) and cover the happy paths only. `test/server.test.js` points each `Server` at temp files by overriding `hostFilePath`, `proxyHostsPath` and `keysPath`, so it never touches `/etc/hosts` or `config/`. The proxy test uses `startServer` with a port-0 Hapi server and `server.inject`. The repo has no linter; the eslint plugin is commented out in `build/rollup.config.js`. Rebuild `dist/` after changing `src/`, because the installed CLI only runs `dist/`.
 
 ## Architecture
 

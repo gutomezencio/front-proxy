@@ -7,7 +7,8 @@
     "dev": "nodemon --exec babel-node src/proxy-server.js",
     "start": "babel-node src/proxy-server.js",
     "start:root": "babel-node src/start.js",
-    "build": "rollup --config build/rollup.config.js"
+    "build": "rollup --config build/rollup.config.js",
+    "test": "jest"
   },
   "bin": {
     "front-proxy": "dist/bin-running.js"
@@ -30,6 +31,7 @@
   },
   "devDependencies": {
     "@rollup/plugin-json": "^4.0.1",
+    "jest": "^30.5.2",
     "mkcert": "^1.2.0",
     "rollup": "^1.29.1",
     "rollup-plugin-alias": "^2.2.0",
