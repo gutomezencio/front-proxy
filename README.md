@@ -8,11 +8,9 @@
 
 Reach apps on local ports, like `localhost:3000`, through real-looking domains, like `local-dev.mylivedomain.com`, over HTTP or HTTPS.
 
-`front-proxy` adds your domains to `/etc/hosts`, pointing them at `127.0.0.1`, and runs a reverse proxy on ports `80` and `443`. The proxy reads the `Host` header of each request and forwards it to the port you mapped to that domain. HTTPS uses locally trusted certificates from [mkcert](https://github.com/FiloSottile/mkcert). Because the mapping lives in the OS, it works in every browser and tool on your machine, not just one.
+While it runs, `front-proxy` adds your domains to `/etc/hosts`, pointing them at `127.0.0.1`, and runs a reverse proxy on ports `80` and `443`. When it stops, it removes them. The proxy reads the `Host` header of each request and forwards it to the port you mapped to that domain. HTTPS uses locally trusted certificates from [mkcert](https://github.com/FiloSottile/mkcert). Because the mapping lives in the OS, it works in every browser and tool on your machine, not just one.
 
 ```
-  front-proxy add local-dev.mylivedomain.com:3000
-
   Browser, curl, Playwright...
           │
           │  https://local-dev.mylivedomain.com
@@ -78,14 +76,26 @@ Then open `http://local-dev.livedomain.com` (or `https://` once you've [set up c
 
 | Command                             | Description                                                          | Needs sudo |
 | ----------------------------------- | -------------------------------------------------------------------- | ---------- |
-| `front-proxy`                       | Start the proxy on ports `80` and `443`                              | Yes        |
-| `front-proxy add <host:port>`       | Add a domain to `/etc/hosts` and the proxy config                    | Yes        |
-| `front-proxy remove <host>`         | Remove a domain from `/etc/hosts` and the proxy config               | Yes        |
+| `front-proxy`                       | Start the proxy on ports `80` and `443`, adding your domains to `/etc/hosts` until it stops | Yes |
+| `front-proxy --persist-hosts`       | Same, but keep the domains in `/etc/hosts` after the proxy stops (`-p` for short)          | Yes |
+| `front-proxy add <host:port>`       | Add a domain to the proxy config                                     | No         |
+| `front-proxy remove <host>`         | Remove a domain from the proxy config                                | No         |
 | `front-proxy list`                  | List the configured domains                                          | No         |
 | `front-proxy generate-certs [host]` | Create HTTPS certificates with mkcert, for one domain or all of them | No         |
 | `front-proxy --help`                | Show the help                                                        | No         |
 
-Commands that edit `/etc/hosts` or bind ports `80`/`443` ask for your password through `sudo`. The password isn't stored.
+Only starting the proxy asks for your password through `sudo`, because it binds ports `80`/`443` and edits `/etc/hosts`. The password isn't stored.
+
+The domains go into a single block in `/etc/hosts`:
+
+```
+# <FRONT-PROXY-HOSTS>
+# > local-dev.livedomain.com < Host added by front-proxy
+127.0.0.1 local-dev.livedomain.com
+# </FRONT-PROXY-HOSTS>
+```
+
+Stopping the proxy (Ctrl+C) removes the block, unless you started it with `--persist-hosts`. If the proxy didn't stop cleanly (it crashed or was killed), the block stays until the next start. Each start replaces any block it finds with a fresh one. `add` and `remove` only change the config, so restart the proxy to apply them.
 
 Requests for a domain that isn't configured get a `502` response.
 
@@ -137,11 +147,10 @@ Keys starting with `$` (like the `$comment` the CLI writes) are ignored.
 
 ## Uninstalling
 
-Remove your domains first, so their entries are cleaned from `/etc/hosts`:
+Stop the proxy first (Ctrl+C), so its block is removed from `/etc/hosts`. If you used `--persist-hosts`, or if an older version added your domains, start the proxy once without the flag and stop it to clean them up:
 
 ```bash
-front-proxy list                   # see what's configured
-front-proxy remove <host>          # for each domain
+front-proxy                        # then Ctrl+C
 npm uninstall -g front-proxy
 rm -rf ~/.front-proxy              # config and certificates
 mkcert -uninstall                  # optional: remove mkcert's local CA

@@ -3,19 +3,20 @@ import fs from 'fs';
 import { resolve } from 'path';
 import { parseCliArgs } from './cli-args.js';
 import { getConfigDir } from './config-dir.js';
+import { colors, info } from './output.js';
 
 // yargs prints usage and exits here on a bad command, before any sudo prompt.
-const { command, value } = parseCliArgs();
+const { command, value, persistHosts } = parseCliArgs();
 
 const commandArgs =
   command === 'start'
-    ? []
+    ? persistHosts ? ['--persist-hosts'] : []
     : [command, ...(value === undefined ? [] : [value])];
 
 const nodeArgs = [resolve(import.meta.dirname, 'proxy-server.js')];
 
-// Created as the current user so later root writes (add/remove) keep the user's ownership
-// and generate-certs, which runs without sudo, can still write here.
+// Created as the current user, so the config stays the user's and the commands that
+// run without sudo (add, remove, generate-certs...) can still write here.
 const prepareConfigDir = (configDir) => {
   fs.mkdirSync(resolve(configDir, 'keys'), { recursive: true });
 
@@ -31,12 +32,14 @@ const init = () => {
 
   prepareConfigDir(configDir);
 
-  // mkcert must run as the current user so its CA lands in the user's CAROOT.
-  const requiresSudo = command !== 'list' && command !== 'generate-certs';
+  // Only starting the proxy binds ports 80/443 and edits /etc/hosts (while it runs).
+  // The rest stay as the current user; mkcert needs that so its CA lands in the user's CAROOT.
+  const requiresSudo = command === 'start';
 
   if (requiresSudo) {
-    console.log(
-      'For usage of the 80 port and access the OS hosts file, you must provide your root password.\n',
+    info(
+      'front-proxy needs your password',
+      colors.dim('To bind ports 80/443 and add your hosts to /etc/hosts while the proxy runs.'),
     );
   }
 
@@ -53,6 +56,10 @@ const init = () => {
     stdio: 'inherit',
     env: { ...process.env, FRONT_PROXY_HOME: configDir },
   });
+
+  // Ctrl+C reaches the child too (same process group, and sudo relays it). Wait for it
+  // to clean /etc/hosts and exit, instead of giving the prompt back halfway through.
+  ['SIGINT', 'SIGTERM', 'SIGHUP'].forEach((signal) => process.on(signal, () => {}));
 
   child.on('exit', (code) => {
     process.exitCode = code;

@@ -54,16 +54,16 @@ describe('Server', () => {
     expect(server.loadProxyHosts()).toEqual({ 'my.local': { port: 3000 } })
   })
 
-  it('add writes the host to the hosts file and the config', () => {
+  it('add saves the host to the config without touching the hosts file', () => {
     const server = createServer(dir)
 
     server.add({ host: 'my.local', port: 3000 })
 
-    expect(fs.readFileSync(server.hostFilePath, 'utf8')).toContain('127.0.0.1 my.local')
+    expect(fs.readFileSync(server.hostFilePath, 'utf8')).toBe('127.0.0.1 localhost\n')
     expect(readConfig(server)['my.local']).toEqual({ port: 3000 })
   })
 
-  it('remove deletes the host from the hosts file and the config', () => {
+  it('remove deletes the host from the config without touching the hosts file', () => {
     const server = createServer(dir)
 
     server.add({ host: 'my.local', port: 3000 })
@@ -73,12 +73,89 @@ describe('Server', () => {
     expect(readConfig(server)['my.local']).toBeUndefined()
   })
 
+  describe('hosts file', () => {
+    const block = [
+      '# <FRONT-PROXY-HOSTS>',
+      '# > my.local < Host added by front-proxy',
+      '127.0.0.1 my.local',
+      '# > api.local < Host added by front-proxy',
+      '127.0.0.1 api.local',
+      '# </FRONT-PROXY-HOSTS>',
+    ].join('\n')
+
+    const readHosts = (server) => fs.readFileSync(server.hostFilePath, 'utf8')
+
+    it('writeHostsFile writes one block with every configured host', () => {
+      const server = createServer(dir, { 'my.local': { port: 3000 }, 'api.local': { port: 4000 } })
+
+      server.writeHostsFile()
+      server.writeHostsFile()
+
+      expect(readHosts(server)).toBe(`127.0.0.1 localhost\n\n${block}\n`)
+    })
+
+    it('cleanHostsFile removes the block and legacy entries, keeping the user lines', () => {
+      const server = createServer(dir)
+      const original = '127.0.0.1 localhost\n127.0.0.1 other.local\n'
+
+      fs.writeFileSync(
+        server.hostFilePath,
+        [
+          '127.0.0.1 localhost',
+          '',
+          '# > old.local < Host added by front-proxy',
+          '127.0.0.1 old.local',
+          '127.0.0.1 other.local',
+          '',
+          block.replace(/\n/g, '\r\n'),
+          '',
+        ].join('\n'),
+      )
+
+      server.cleanHostsFile()
+
+      expect(readHosts(server)).toBe(original)
+    })
+
+    it('cleanHostsFile only drops the entries after a start line without an end line', () => {
+      const server = createServer(dir)
+
+      fs.writeFileSync(
+        server.hostFilePath,
+        '127.0.0.1 localhost\n# <FRONT-PROXY-HOSTS>\n# > my.local < Host added by front-proxy\n127.0.0.1 my.local\n127.0.0.1 other.local\n',
+      )
+
+      server.cleanHostsFile()
+
+      expect(readHosts(server)).toBe('127.0.0.1 localhost\n127.0.0.1 other.local\n')
+    })
+
+    it('stop removes the hosts, unless they are persisted', async () => {
+      const server = createServer(dir, { 'my.local': { port: 3000 }, 'api.local': { port: 4000 } })
+
+      jest.spyOn(process, 'exit').mockImplementation(() => {})
+
+      server.writeHostsFile()
+      server.persistHosts = true
+      await server.stop()
+
+      expect(readHosts(server)).toContain(block)
+
+      server.stopping = false
+      server.persistHosts = false
+      await server.stop()
+
+      expect(readHosts(server)).toBe('127.0.0.1 localhost\n')
+      expect(process.exit).toHaveBeenCalledTimes(2)
+    })
+  })
+
   it('list prints every configured host', () => {
     const server = createServer(dir, { 'my.local': { port: 3000, cert: 'my.local' } })
 
     server.list()
 
-    expect(console.log).toHaveBeenCalledWith('HOST: my.local | PORT: 3000 | CERT: my.local')
+    expect(console.log).toHaveBeenCalledWith('ℹ Hosts\n\n  my.local  →  :3000   cert: my.local\n')
   })
 
   describe('proxy route', () => {
