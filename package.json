@@ -31,7 +31,8 @@
     "dev": "node --watch src/proxy-server.js",
     "start": "node src/proxy-server.js",
     "start:root": "node src/start.js",
-    "test": "node --experimental-vm-modules --no-warnings=ExperimentalWarning node_modules/jest/bin/jest.js"
+    "test": "node --experimental-vm-modules --no-warnings=ExperimentalWarning node_modules/jest/bin/jest.js",
+    "test:coverage": "npm test -- --coverage"
   },
   "bin": {
     "front-proxy": "src/bin-running.js"
@@ -40,7 +41,15 @@
     "src"
   ],
   "jest": {
-    "transform": {}
+    "transform": {},
+    "coverageProvider": "v8",
+    "collectCoverageFrom": [
+      "src/**/*.js"
+    ],
+    "coverageReporters": [
+      "text",
+      "lcov"
+    ]
   },
   "dependencies": {
     "@hapi/h2o2": "^10.0.4",

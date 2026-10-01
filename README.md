@@ -1,10 +1,38 @@
 # front-proxy
 
 [![npm](https://img.shields.io/npm/v/front-proxy)](https://www.npmjs.com/package/front-proxy)
+[![coverage](https://codecov.io/gh/gutomezencio/front-proxy/graph/badge.svg)](https://codecov.io/gh/gutomezencio/front-proxy)
 
-Map local domains (like `local-dev.livedomain.com`) to apps running on local ports, at the OS level.
+Reach apps on local ports, like `localhost:3000`, through real-looking domains, like `local-dev.mylivedomain.com`, over HTTP or HTTPS.
 
-`front-proxy` runs a reverse proxy on ports `80` and `443` and adds your domains to `/etc/hosts`. Every browser and tool on your machine then reaches your local app through the real-looking domain.
+`front-proxy` adds your domains to `/etc/hosts`, pointing them at `127.0.0.1`, and runs a reverse proxy on ports `80` and `443`. The proxy reads the `Host` header of each request and forwards it to the port you mapped to that domain. HTTPS uses locally trusted certificates from [mkcert](https://github.com/FiloSottile/mkcert). Because the mapping lives in the OS, it works in every browser and tool on your machine, not just one.
+
+```
+  front-proxy add local-dev.mylivedomain.com:3000
+
+  Browser, curl, Playwright...
+          │
+          │  https://local-dev.mylivedomain.com
+          ▼
+  ┌───────────────────────────────────────────────┐
+  │ /etc/hosts                                    │
+  │   127.0.0.1  local-dev.mylivedomain.com       │
+  └───────────────────────────────────────────────┘
+          │
+          │  127.0.0.1:443  (or :80 for http)
+          ▼
+  ┌───────────────────────────────────────────────┐
+  │ front-proxy                                   │
+  │   1. TLS with the domain's mkcert certificate │
+  │   2. Host header → port, from proxyHosts.json │
+  │        local-dev.mylivedomain.com → 3000      │
+  │      (unknown host → 502)                     │
+  └───────────────────────────────────────────────┘
+          │
+          │  http://127.0.0.1:3000
+          ▼
+  Your local app
+```
 
 ## Why
 
