@@ -16,6 +16,11 @@ npm run start:root             # src/start.js: re-runs proxy-server.js under sud
 npm test                       # jest, tests in test/ (npm test -- test/server.test.js for one file)
 npm run test:coverage          # same, with V8 coverage into coverage/ (CI uploads lcov.info to Codecov)
 
+# Release: run the "Publish" workflow (.github/workflows/publish.yml) on main from
+# the Actions tab, picking patch/minor/major. It bumps the version, updates the
+# version-pinned Socket badge in README.md, commits, tags, pushes, publishes
+# to npm via trusted publishing, and creates the GitHub release. Don't bump the version locally.
+
 # CLI commands (same for `front-proxy`, `npm run start:root --`, or `node src/proxy-server.js`)
 front-proxy add host:port
 front-proxy remove host
