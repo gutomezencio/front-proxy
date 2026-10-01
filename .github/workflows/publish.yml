@@ -1,19 +1,15 @@
 name: Publish
 
+# Runs when a release PR from prepare-release.yml is merged: publishes the
+# package.json version if npm doesn't have it yet, then creates the release.
+# npm's trusted publisher is configured for this file name, so keep it.
 on:
-  workflow_dispatch:
-    inputs:
-      bump:
-        description: Version bump
-        required: true
-        type: choice
-        options:
-          - patch
-          - minor
-          - major
+  push:
+    branches: [main]
+    paths: [package.json]
 
 permissions:
-  # Push the version commit and tag
+  # Create the tag and the GitHub release
   contents: write
   # OIDC token for npm trusted publishing (no NPM_TOKEN secret)
   id-token: write
@@ -23,7 +19,6 @@ concurrency:
 
 jobs:
   publish:
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,32 +27,27 @@ jobs:
           # Trusted publishing needs npm 11.5.1+, which ships with Node 24
           node-version: 24
           registry-url: https://registry.npmjs.org
-      - run: npm ci
-      - run: npm test
 
-      - name: Bump the version
-        id: version
+      - name: Check if this version is already on npm
+        id: check
         run: |
-          VERSION=$(npm version ${{ inputs.bump }} --no-git-tag-version)
-          echo "version=${VERSION#v}" >> "$GITHUB_OUTPUT"
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if npm view "front-proxy@$VERSION" version >/dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Update the Socket badge in README.md
-        run: |
-          sed -i "s#\(badge\.socket\.dev/npm/package/front-proxy/\)[^)]*#\1${{ steps.version.outputs.version }}#g" README.md
-          grep -q "front-proxy/${{ steps.version.outputs.version }}" README.md
-
-      - name: Commit, tag and push
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package.json package-lock.json README.md
-          git commit -m "Release v${{ steps.version.outputs.version }}"
-          git tag "v${{ steps.version.outputs.version }}"
-          git push origin HEAD:main "v${{ steps.version.outputs.version }}"
-
-      - run: npm publish
+      - if: steps.check.outputs.published == 'false'
+        run: npm ci
+      - if: steps.check.outputs.published == 'false'
+        run: npm test
+      - if: steps.check.outputs.published == 'false'
+        run: npm publish
 
       - name: Create the GitHub release
+        if: steps.check.outputs.published == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "v${{ steps.version.outputs.version }}" --generate-notes --verify-tag
+        run: gh release create "v${{ steps.check.outputs.version }}" --target "$GITHUB_SHA" --generate-notes
