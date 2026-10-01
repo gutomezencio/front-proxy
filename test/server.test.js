@@ -155,7 +155,7 @@ describe('Server', () => {
 
     server.list()
 
-    expect(console.log).toHaveBeenCalledWith('HOST: my.local | PORT: 3000 | CERT: my.local')
+    expect(console.log).toHaveBeenCalledWith('ℹ Hosts\n\n  my.local  →  :3000   cert: my.local\n')
   })
 
   describe('proxy route', () => {

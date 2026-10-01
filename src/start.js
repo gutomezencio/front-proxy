@@ -3,6 +3,7 @@ import fs from 'fs';
 import { resolve } from 'path';
 import { parseCliArgs } from './cli-args.js';
 import { getConfigDir } from './config-dir.js';
+import { colors, info } from './output.js';
 
 // yargs prints usage and exits here on a bad command, before any sudo prompt.
 const { command, value, persistHosts } = parseCliArgs();
@@ -36,8 +37,9 @@ const init = () => {
   const requiresSudo = command === 'start';
 
   if (requiresSudo) {
-    console.log(
-      'To bind ports 80/443 and add your hosts to /etc/hosts while the proxy runs, you must provide your root password.\n',
+    info(
+      'front-proxy needs your password',
+      colors.dim('To bind ports 80/443 and add your hosts to /etc/hosts while the proxy runs.'),
     );
   }
 

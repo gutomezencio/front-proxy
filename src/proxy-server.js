@@ -1,5 +1,18 @@
 import Server from './server.js'
 import { parseCliArgs } from './cli-args.js'
+import { colors, error } from './output.js'
+
+class UsageError extends Error {}
+
+const fail = (err) => {
+  process.exitCode = 1
+
+  if (err instanceof UsageError) {
+    return error(err.message, `Use host:port, eq.: ${colors.cyan('front-proxy add myhost.local:3000')}`)
+  }
+
+  error('Something went wrong', err.message || String(err))
+}
 
 const ProxyServer = new Server()
 
@@ -10,11 +23,11 @@ try {
     const [host, port] = value.split(':')
 
     if (!host) {
-      throw "You must pass a hostname and port if you want to add a proxy rule, eq.: myhost:3000"
+      throw new UsageError('Missing the hostname and port')
     }
 
     if (!port) {
-      throw "You must pass a port for this hostname, eq.: myhost:3000"
+      throw new UsageError(`Missing the port for ${host}`)
     }
 
     ProxyServer.add({
@@ -28,10 +41,10 @@ try {
   } else if (command === 'list') {
     ProxyServer.list()
   } else if (command === 'generate-certs') {
-    ProxyServer.generateCerts(value || true)
+    ProxyServer.generateCerts(value || true).catch(fail)
   } else {
-    ProxyServer.start({ persistHosts }).catch((err) => console.error(err))
+    ProxyServer.start({ persistHosts }).catch(fail)
   }
 } catch (err) {
-  console.error(err)
+  fail(err)
 }
