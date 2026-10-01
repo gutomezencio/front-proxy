@@ -3,26 +3,32 @@ import { parseCliArgs } from '../src/cli-args.js'
 
 describe('parseCliArgs', () => {
   it('starts the servers when no command is given', () => {
-    expect(parseCliArgs([])).toEqual({ command: 'start', value: undefined })
+    expect(parseCliArgs([])).toEqual({ command: 'start', value: undefined, persistHosts: false })
+  })
+
+  it('parses --persist-hosts and -p when starting', () => {
+    expect(parseCliArgs(['--persist-hosts']).persistHosts).toBe(true)
+    expect(parseCliArgs(['-p']).persistHosts).toBe(true)
   })
 
   it('parses add with host:port', () => {
-    expect(parseCliArgs(['add', 'my.local:3000'])).toEqual({ command: 'add', value: 'my.local:3000' })
+    expect(parseCliArgs(['add', 'my.local:3000'])).toEqual({ command: 'add', value: 'my.local:3000', persistHosts: false })
   })
 
   it('parses remove with a host', () => {
-    expect(parseCliArgs(['remove', 'my.local'])).toEqual({ command: 'remove', value: 'my.local' })
+    expect(parseCliArgs(['remove', 'my.local'])).toEqual({ command: 'remove', value: 'my.local', persistHosts: false })
   })
 
   it('parses list', () => {
-    expect(parseCliArgs(['list'])).toEqual({ command: 'list', value: undefined })
+    expect(parseCliArgs(['list'])).toEqual({ command: 'list', value: undefined, persistHosts: false })
   })
 
   it('parses generate-certs with and without a host', () => {
-    expect(parseCliArgs(['generate-certs'])).toEqual({ command: 'generate-certs', value: undefined })
+    expect(parseCliArgs(['generate-certs'])).toEqual({ command: 'generate-certs', value: undefined, persistHosts: false })
     expect(parseCliArgs(['generate-certs', 'my.local'])).toEqual({
       command: 'generate-certs',
       value: 'my.local',
+      persistHosts: false,
     })
   })
 
@@ -34,6 +40,7 @@ describe('parseCliArgs', () => {
 
     expect(() => parseCliArgs(['bogus'])).toThrow('exit 1')
     expect(() => parseCliArgs(['--add', 'my.local:3000'])).toThrow('exit 1')
+    expect(() => parseCliArgs(['add', 'my.local:3000', '--persist-hosts'])).toThrow('exit 1')
 
     jest.restoreAllMocks()
   })

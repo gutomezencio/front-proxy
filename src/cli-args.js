@@ -1,10 +1,17 @@
 import yargs from 'yargs'
 
-// Returns { command, value }. Running with no command means "start the servers".
+// Returns { command, value, persistHosts }. Running with no command means "start the servers".
 export const parseCliArgs = (args = process.argv.slice(2)) => {
   const argv = yargs()
     .scriptName('front-proxy')
-    .command('$0', 'Start the proxy servers on ports 80 and 443')
+    .command('$0', 'Start the proxy servers on ports 80 and 443', (cmd) =>
+      cmd.option('persist-hosts', {
+        alias: 'p',
+        type: 'boolean',
+        default: false,
+        describe: 'Keep the hosts in /etc/hosts after the proxy stops',
+      }),
+    )
     .command('add <host:port>', 'Add a domain to the proxy list, eq.: myhost:3000')
     .command('remove <host>', 'Remove a domain from the proxy list')
     .command('list', 'List the domains in the proxy list')
@@ -21,5 +28,9 @@ export const parseCliArgs = (args = process.argv.slice(2)) => {
   const [command = 'start'] = argv._
   const value = { add: argv['host:port'], remove: argv.host, 'generate-certs': argv.host }[command]
 
-  return { command, value: value === undefined ? undefined : String(value) }
+  return {
+    command,
+    value: value === undefined ? undefined : String(value),
+    persistHosts: Boolean(argv.persistHosts),
+  }
 }

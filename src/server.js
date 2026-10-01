@@ -8,13 +8,30 @@ import { getConfigDir } from './config-dir.js';
 
 const hostsFileMarker = (host) => `# > ${host} < Host added by front-proxy`;
 
+// The proxy's /etc/hosts entries live between these lines, only while it runs.
+const hostsBlockStart = '# <FRONT-PROXY-HOSTS>';
+const hostsBlockEnd = '# </FRONT-PROXY-HOSTS>';
+
+const hostsFileMarkerLine = /^# > \S+ < Host added by front-proxy$/;
+const hostsEntryLine = /^127\.0\.0\.1\s+\S+\s*$/;
+
+const buildHostsBlock = (hosts) =>
+  [
+    hostsBlockStart,
+    ...hosts.flatMap((host) => [hostsFileMarker(host), `127.0.0.1 ${host}`]),
+    hostsBlockEnd,
+  ].join('\n');
+
+const stopSignals = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+
+const restartNote =
+  'It applies the next time the proxy starts (restart it if it is running).';
+
 const defaultCertName = 'default';
 
 // Written as the first key of proxyHosts.json; keys starting with "$" are not hosts.
 const proxyHostsComment =
   'front-proxy hosts: { "<domain>": { "port": <local port>, "cert": "<name>" } }. Managed by `front-proxy add` / `remove` / `generate-certs`. "cert" is optional and points to keys/_private-<name>-{cert,key}.pem, next to this file.';
-
-const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 export default class Server {
   constructor() {
@@ -89,14 +106,35 @@ export default class Server {
     return contexts;
   }
 
-  start() {
+  async start({ persistHosts = false } = {}) {
+    this.persistHosts = persistHosts;
+    stopSignals.forEach((signal) => process.on(signal, () => this.stop()));
+
+    // Leftovers from a run that didn't stop cleanly, or from --persist-hosts.
+    this.cleanHostsFile();
+
+    try {
+      await this.startServers();
+      this.writeHostsFile();
+    } catch (err) {
+      console.error(`front-proxy couldn't start: ${err.message}`);
+      this.persistHosts = false;
+      process.exitCode = 1;
+
+      return this.stop();
+    }
+
+    console.log(`Hosts added to ${this.hostFilePath}. Press Ctrl+C to stop.`);
+  }
+
+  async startServers() {
     const secureContexts = this.getSecureContexts();
     const defaultCert = this.readCert(defaultCertName);
 
     this.ServerHTTP = Hapi.server({
       port: 80,
     });
-    this.startServer(this.ServerHTTP);
+    await this.startServer(this.ServerHTTP);
 
     if (!defaultCert) {
       return console.warn(
@@ -123,7 +161,36 @@ export default class Server {
         },
       },
     });
-    this.startServer(this.ServerHTTPS);
+    await this.startServer(this.ServerHTTPS);
+  }
+
+  async stop() {
+    if (this.stopping) {
+      return;
+    }
+
+    this.stopping = true;
+
+    // Synchronous and first, so /etc/hosts is clean even if stopping Hapi hangs.
+    if (this.persistHosts) {
+      console.log(`\nHosts kept in ${this.hostFilePath} (--persist-hosts).`);
+    } else {
+      try {
+        this.cleanHostsFile();
+        console.log(`\nHosts removed from ${this.hostFilePath}.`);
+      } catch (err) {
+        console.error(`\nCouldn't clean ${this.hostFilePath}: ${err.message}`);
+      }
+    }
+
+    await Promise.allSettled(
+      [this.ServerHTTP, this.ServerHTTPS]
+        .filter(Boolean)
+        .map((server) => server.stop({ timeout: 1000 })),
+    );
+
+    console.log('front-proxy stopped.');
+    process.exit();
   }
 
   async startServer(server) {
@@ -177,23 +244,83 @@ export default class Server {
     return fs.readFileSync(this.hostFilePath, 'utf8');
   }
 
-  checkAlreadyExist(host) {
-    const hostLine = new RegExp(`^127\\.0\\.0\\.1\\s+${escapeRegExp(host)}\\s*$`, 'm');
+  // Removes the front-proxy block and the per-host entries older versions wrote
+  // outside of it. Lines the user wrote by hand are kept.
+  cleanHostsFile() {
+    const content = this.getHostFileContent();
+    const lines = content.split('\n');
+    const kept = [];
+    const isLine = (line, expected) =>
+      line !== undefined && line.replace(/\r$/, '') === expected;
+    const matches = (line, regex) =>
+      line !== undefined && regex.test(line.replace(/\r$/, ''));
+    // Drops the blank line that was written before a removed entry.
+    const dropBlankLine = () => {
+      if (kept.length > 0 && kept[kept.length - 1].trim() === '') {
+        kept.pop();
+      }
+    };
 
-    return hostLine.test(this.getHostFileContent());
+    for (let i = 0; i < lines.length; i += 1) {
+      if (isLine(lines[i], hostsBlockStart)) {
+        dropBlankLine();
+
+        const end = lines.findIndex((line, j) => j > i && isLine(line, hostsBlockEnd));
+
+        if (end !== -1) {
+          i = end;
+        } else {
+          // No end line: only drop the entries right after the start line.
+          while (
+            matches(lines[i + 1], hostsFileMarkerLine) &&
+            matches(lines[i + 2], hostsEntryLine)
+          ) {
+            i += 2;
+          }
+        }
+      } else if (
+        matches(lines[i], hostsFileMarkerLine) &&
+        matches(lines[i + 1], hostsEntryLine)
+      ) {
+        dropBlankLine();
+        i += 1;
+      } else {
+        kept.push(lines[i]);
+      }
+    }
+
+    let cleaned = kept.join('\n');
+
+    if (content.endsWith('\n') && !cleaned.endsWith('\n')) {
+      cleaned += '\n';
+    }
+
+    if (cleaned !== content) {
+      fs.writeFileSync(this.hostFilePath, cleaned);
+    }
+  }
+
+  writeHostsFile() {
+    this.cleanHostsFile();
+
+    const hosts = Object.keys(this.proxyHosts);
+
+    if (hosts.length === 0) {
+      return;
+    }
+
+    const content = this.getHostFileContent();
+    const separator = content === '' || content.endsWith('\n') ? '\n' : '\n\n';
+
+    fs.appendFileSync(this.hostFilePath, `${separator}${buildHostsBlock(hosts)}\n`);
   }
 
   add({ host, port }) {
-    if (this.checkAlreadyExist(host) || this.proxyHosts[host]) {
+    if (this.proxyHosts[host]) {
       return console.error(
         `The current host is already added. Provide another one.`,
       );
     }
-
-    fs.appendFileSync(
-      this.hostFilePath,
-      `\n${hostsFileMarker(host)}\n127.0.0.1 ${host}\n`,
-    );
 
     const { cert, key } = this.getCertPaths(host);
     const hasCert = fs.existsSync(cert) && fs.existsSync(key);
@@ -204,32 +331,22 @@ export default class Server {
     });
 
     return console.log(
-      `The host ${host}:${port} was successfully added to config.`,
+      `The host ${host}:${port} was successfully added to config. ${restartNote}`,
     );
   }
 
   remove(host) {
-    if (!this.checkAlreadyExist(host) || !this.proxyHosts[host]) {
+    if (!this.proxyHosts[host]) {
       return console.error(
-        `Can't find the host "${host}" in your OS hosts file or in front-proxy config. Please, check the host name and try again.`,
+        `Can't find the host "${host}" in the front-proxy config. Please, check the host name and try again.`,
       );
     }
-
-    // Also matches entries written with \r\n by older versions.
-    const hostBlock = new RegExp(
-      `\\r?\\n${escapeRegExp(hostsFileMarker(host))}\\r?\\n127\\.0\\.0\\.1 ${escapeRegExp(host)}(\\r?\\n)?`,
-    );
-
-    fs.writeFileSync(
-      this.hostFilePath,
-      this.getHostFileContent().replace(hostBlock, ''),
-    );
 
     const { [host]: _, ...newProxyHosts } = this.proxyHosts;
 
     this.saveProxyHosts(newProxyHosts);
 
-    return console.log(`The host ${host} was successfully removed.`);
+    return console.log(`The host ${host} was successfully removed. ${restartNote}`);
   }
 
   list() {

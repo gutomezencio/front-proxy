@@ -4,7 +4,7 @@ import { parseCliArgs } from './cli-args.js'
 const ProxyServer = new Server()
 
 try {
-  const { command, value } = parseCliArgs()
+  const { command, value, persistHosts } = parseCliArgs()
 
   if (command === 'add') {
     const [host, port] = value.split(':')
@@ -30,7 +30,7 @@ try {
   } else if (command === 'generate-certs') {
     ProxyServer.generateCerts(value || true)
   } else {
-    ProxyServer.start()
+    ProxyServer.start({ persistHosts }).catch((err) => console.error(err))
   }
 } catch (err) {
   console.error(err)
