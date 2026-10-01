@@ -1,0 +1,22 @@
+name: Audit
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  schedule:
+    - cron: '0 6 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Only runtime dependencies: what users get from `npm install -g front-proxy`
+      - run: npm audit --omit=dev --audit-level=high
