@@ -14,6 +14,7 @@ npm start                      # node src/proxy-server.js (run the proxy, no sud
 npm run dev                    # same thing, under node --watch
 npm run start:root             # src/start.js: re-runs proxy-server.js under sudo (like the real CLI)
 npm test                       # jest, tests in test/ (npm test -- test/server.test.js for one file)
+npm run test:coverage          # same, with V8 coverage into coverage/ (CI uploads lcov.info to Codecov)
 
 # CLI commands (same for `front-proxy`, `npm run start:root --`, or `node src/proxy-server.js`)
 front-proxy add host:port

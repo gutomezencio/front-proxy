@@ -1,0 +1,23 @@
+name: Test
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run test:coverage
+      - uses: codecov/codecov-action@v5
+        with:
+          files: ./coverage/lcov.info
+          disable_search: true
+          token: ${{ secrets.CODECOV_TOKEN }}
