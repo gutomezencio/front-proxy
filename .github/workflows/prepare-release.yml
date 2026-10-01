@@ -1,0 +1,59 @@
+name: Prepare release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  # Push the release branch and open the PR
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: prepare-release
+
+jobs:
+  release-pr:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - run: npm test
+
+      - name: Bump the version
+        id: version
+        run: |
+          VERSION=$(npm version ${{ inputs.bump }} --no-git-tag-version)
+          echo "version=${VERSION#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Update the Socket badge in README.md
+        run: |
+          sed -i "s#\(badge\.socket\.dev/npm/package/front-proxy/\)[^)]*#\1${{ steps.version.outputs.version }}#g" README.md
+          grep -q "front-proxy/${{ steps.version.outputs.version }}" README.md
+
+      - name: Open the release PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "release/v$VERSION"
+          git add package.json package-lock.json README.md
+          git commit -m "Release v$VERSION"
+          git push origin "release/v$VERSION"
+          gh pr create --base main --head "release/v$VERSION" \
+            --title "Release v$VERSION" \
+            --body "Bumps the version to \`$VERSION\` and updates the Socket badge. Merging publishes \`front-proxy@$VERSION\` to npm and creates the \`v$VERSION\` GitHub release."
