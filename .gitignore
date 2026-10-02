@@ -10,6 +10,7 @@ npm-debug.log
 .scannerwork/
 .sonarlint/
 /.idea/
+.playwright-mcp/
 .scannerwork
 .sonarlint
 .package-lock.json

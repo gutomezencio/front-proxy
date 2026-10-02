@@ -62,6 +62,9 @@ export default class Server {
     this.keysPath = resolve(configDir, 'keys');
     // Set by start(); off for the CLI commands and the tests.
     this.adminEnabled = false;
+    // Tests use port 0 (a random free port) and a fake mkcert.
+    this.ports = { http: 80, https: 443 };
+    this.mkcertPath = 'mkcert';
     this.proxyHosts = this.loadProxyHosts();
   }
 
@@ -192,7 +195,7 @@ export default class Server {
     }
 
     const httpsLine = this.ServerHTTPS
-      ? `${colors.bold('HTTPS')}  :443`
+      ? `${colors.bold('HTTPS')}  :${this.ports.https}`
       : `${colors.bold('HTTPS')}  ${colors.yellow(`disabled: run ${colors.cyan('front-proxy generate-certs')} to enable it`)}`;
     const hostLines = Object.keys(this.proxyHosts).length
       ? hostRows(this.proxyHosts)
@@ -207,7 +210,7 @@ export default class Server {
     this.startSpinner.succeed(
       'front-proxy is running',
       '',
-      `${colors.bold('HTTP')}   :80`,
+      `${colors.bold('HTTP')}   :${this.ports.http}`,
       httpsLine,
       '',
       ...hostLines,
@@ -222,7 +225,7 @@ export default class Server {
     const defaultCert = this.readCert(defaultCertName);
 
     this.ServerHTTP = Hapi.server({
-      port: 80,
+      port: this.ports.http,
     });
     await this.startServer(this.ServerHTTP);
 
@@ -238,7 +241,7 @@ export default class Server {
     };
 
     this.ServerHTTPS = Hapi.server({
-      port: 443,
+      port: this.ports.https,
       tls: this.tls,
       routes: {
         security: {
@@ -487,7 +490,7 @@ export default class Server {
     const certSpinner = spinner(`Creating cert for ${name}…`);
 
     try {
-      await execFileAsync('mkcert', ['-cert-file', cert, '-key-file', key, ...domains]);
+      await execFileAsync(this.mkcertPath, ['-cert-file', cert, '-key-file', key, ...domains]);
       certSpinner.succeed(`Cert created for ${name}`, colors.dim(cert));
 
       return true;
@@ -504,7 +507,7 @@ export default class Server {
 
   async generateCerts(target) {
     try {
-      execFileSync('mkcert', ['-help'], { stdio: 'ignore' });
+      execFileSync(this.mkcertPath, ['-help'], { stdio: 'ignore' });
     } catch (err) {
       return error(
         'mkcert was not found in your PATH',
@@ -528,7 +531,7 @@ export default class Server {
     // Installs the local CA into the system trust store (no-op if already installed).
     // No spinner: it can ask for a password, and the spinner would hide the prompt.
     info('Checking the mkcert local CA');
-    execFileSync('mkcert', ['-install'], { stdio: 'inherit' });
+    execFileSync(this.mkcertPath, ['-install'], { stdio: 'inherit' });
     console.log('');
 
     if (!this.readCert(defaultCertName)) {

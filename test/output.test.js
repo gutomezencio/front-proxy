@@ -48,4 +48,36 @@ describe('output', () => {
     expect(write).not.toHaveBeenCalled()
     expect(console.log).toHaveBeenCalledWith('✔ Done\n')
   })
+
+  it('a spinner on a TTY animates, hides the cursor and restores it when done', () => {
+    const isTTY = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY')
+    const write = jest.spyOn(process.stdout, 'write').mockImplementation(() => true)
+
+    jest.useFakeTimers()
+    Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true })
+
+    try {
+      const working = spinner('Working…')
+
+      jest.advanceTimersByTime(160)
+      working.fail('Failed', 'details')
+      working.stop()
+
+      const output = write.mock.calls.map(([text]) => text).join('')
+
+      expect(output).toContain('\x1b[?25l')
+      expect(output).toContain('⠋')
+      expect(output).toContain('⠙')
+      expect(output).toContain('Working…')
+      expect(output.endsWith('\x1b[?25h')).toBe(true)
+      expect(console.error).toHaveBeenCalledWith(expect.stringContaining('Failed'))
+    } finally {
+      jest.useRealTimers()
+      if (isTTY) {
+        Object.defineProperty(process.stdout, 'isTTY', isTTY)
+      } else {
+        delete process.stdout.isTTY
+      }
+    }
+  })
 })

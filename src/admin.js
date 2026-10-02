@@ -20,6 +20,7 @@ const token = randomBytes(32).toString('hex');
 const staticFiles = {
   '/': { file: 'index.html', type: 'text/html; charset=utf-8' },
   '/app.js': { file: 'app.js', type: 'text/javascript; charset=utf-8' },
+  '/lib.js': { file: 'lib.js', type: 'text/javascript; charset=utf-8' },
   '/icons.js': { file: 'icons.js', type: 'text/javascript; charset=utf-8' },
   '/app.css': { file: 'app.css', type: 'text/css; charset=utf-8' },
   '/favicon.svg': { file: 'favicon.svg', type: 'image/svg+xml' },
@@ -142,16 +143,34 @@ export const registerAdmin = (server, proxy) => {
       Object.entries(hosts).map(([host, entry]) => [host, { ...entry, certStatus: proxy.certStatus(entry) }]),
     );
 
+  // For active hosts, 'own' means the running proxy loaded the cert (applyConfig() or start()),
+  // not just that its files exist now, e.g. right after `generate-certs` filled in missing files.
+  const describeActive = (hosts) =>
+    Object.fromEntries(
+      Object.entries(hosts).map(([host, entry]) => {
+        let certStatus = 'default';
+
+        if (entry.cert) {
+          certStatus = proxy.secureContexts?.[host] ? 'own' : 'missing';
+        }
+
+        return [host, { ...entry, certStatus }];
+      }),
+    );
+
   const getState = () => {
-    const config = proxy.loadProxyHosts({ quiet: true });
-    const active = proxy.activeHosts ?? {};
+    const config = describe(proxy.loadProxyHosts({ quiet: true }));
+    const active = describeActive(proxy.activeHosts ?? {});
+    const certsToLoad = Object.keys(config).some(
+      (host) => config[host].certStatus === 'own' && active[host] && active[host].certStatus !== 'own',
+    );
 
     return {
       adminHost,
       https: Boolean(proxy.ServerHTTPS),
-      active: describe(active),
-      config: describe(config),
-      pending: !sameHosts(config, active),
+      active,
+      config,
+      pending: !sameHosts(config, active) || certsToLoad,
     };
   };
 

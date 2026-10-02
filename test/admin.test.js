@@ -126,6 +126,34 @@ describe('admin page', () => {
     expect(readConfig()).toEqual(before)
   })
 
+  it('rejects malformed bodies and unknown hosts', async () => {
+    expect((await send('POST', '/api/hosts', [1, 2])).statusCode).toBe(400)
+    expect(JSON.parse((await send('POST', '/api/hosts', { host: 'a.local' })).payload).error).toBe('Missing fields: port')
+    expect((await send('PUT', '/api/hosts/my.local', { port: 4000, host: 'x' })).statusCode).toBe(400)
+    expect((await send('PUT', '/api/hosts/my.local', { port: 80 })).statusCode).toBe(400)
+    expect((await send('DELETE', '/api/hosts/missing.local')).statusCode).toBe(404)
+  })
+
+  it('limits the number of hosts', async () => {
+    server.saveProxyHosts(
+      Object.fromEntries(Array.from({ length: 100 }, (_, i) => [`h${i}.local`, { port: 3000 + i }])),
+    )
+
+    const response = await send('POST', '/api/hosts', { host: 'one-more.local', port: 5000 })
+
+    expect(response.statusCode).toBe(400)
+    expect(JSON.parse(response.payload).error).toContain('up to 100 hosts')
+  })
+
+  it('reports when the config cannot be applied', async () => {
+    server.hostFilePath = join(dir, 'missing', 'hosts')
+
+    const response = await send('POST', '/api/apply')
+
+    expect(response.statusCode).toBe(500)
+    expect(JSON.parse(response.payload).error).toContain("Couldn't apply the config")
+  })
+
   it('applies the config to the running proxy and /etc/hosts', async () => {
     await send('POST', '/api/hosts', { host: 'new.local', port: target.address().port })
 
@@ -138,6 +166,33 @@ describe('admin page', () => {
     expect(proxied.payload).toBe('hello from /new')
     expect(hosts).toContain('127.0.0.1 new.local')
     expect(hosts).toContain(`127.0.0.1 ${adminHost}`)
+  })
+
+  it('marks a cert created with generate-certs as pending until the proxy loads it', async () => {
+    const state = async () => JSON.parse((await get('/api/state')).payload)
+
+    // What `generate-certs my.local` does: writes the cert files and sets "cert" in the config.
+    fs.writeFileSync(join(dir, '_private-my.local-cert.pem'), 'cert')
+    fs.writeFileSync(join(dir, '_private-my.local-key.pem'), 'key')
+    server.saveProxyHosts({ 'my.local': { port: target.address().port, cert: 'my.local' } })
+
+    const afterGenerate = await state()
+
+    expect(afterGenerate.pending).toBe(true)
+    expect(afterGenerate.config['my.local'].certStatus).toBe('own')
+    expect(afterGenerate.active['my.local'].certStatus).toBe('default')
+
+    // Cert already in the config and active, but its files were missing until now.
+    server.activeHosts = server.loadProxyHosts()
+
+    const filesAdded = await state()
+
+    expect(filesAdded.active['my.local'].certStatus).toBe('missing')
+    expect(filesAdded.pending).toBe(true)
+
+    server.secureContexts = { 'my.local': {} }
+
+    expect((await state()).pending).toBe(false)
   })
 
   it('reports which configured ports have something listening', async () => {
