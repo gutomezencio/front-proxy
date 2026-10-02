@@ -1,5 +1,6 @@
 import Server from './server.js'
 import { parseCliArgs } from './cli-args.js'
+import { normalizeHost, validateHost, validatePort } from './hosts-validation.js'
 import { colors, error } from './output.js'
 
 class UsageError extends Error {}
@@ -14,36 +15,56 @@ const fail = (err) => {
   error('Something went wrong', err.message || String(err))
 }
 
+// Throws a UsageError when the host isn't a valid hostname.
+const checkHost = (value) => {
+  const host = normalizeHost(value)
+  const problem = validateHost(host)
+
+  if (problem) {
+    throw new UsageError(problem)
+  }
+
+  return host
+}
+
 const ProxyServer = new Server()
 
 try {
-  const { command, value, persistHosts } = parseCliArgs()
+  const { command, value, persistHosts, admin } = parseCliArgs()
 
   if (command === 'add') {
-    const [host, port] = value.split(':')
+    const [rawHost, rawPort, ...rest] = value.split(':')
 
-    if (!host) {
+    if (!rawHost) {
       throw new UsageError('Missing the hostname and port')
     }
 
-    if (!port) {
-      throw new UsageError(`Missing the port for ${host}`)
+    if (!rawPort) {
+      throw new UsageError(`Missing the port for ${rawHost}`)
     }
 
-    ProxyServer.add({
-      host,
-      port: parseInt(port)
-    })
+    if (rest.length) {
+      throw new UsageError(`"${value}" has more than one ":"`)
+    }
+
+    const host = checkHost(rawHost)
+    const { port, error: portError } = validatePort(rawPort)
+
+    if (portError) {
+      throw new UsageError(portError)
+    }
+
+    ProxyServer.add({ host, port })
   } else if (command === 'remove') {
     const [host,] = value.split(':')
 
-    ProxyServer.remove(host)
+    ProxyServer.remove(normalizeHost(host))
   } else if (command === 'list') {
     ProxyServer.list()
   } else if (command === 'generate-certs') {
-    ProxyServer.generateCerts(value || true).catch(fail)
+    ProxyServer.generateCerts(value === undefined ? true : checkHost(value)).catch(fail)
   } else {
-    ProxyServer.start({ persistHosts }).catch(fail)
+    ProxyServer.start({ persistHosts, admin }).catch(fail)
   }
 } catch (err) {
   fail(err)

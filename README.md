@@ -1,4 +1,4 @@
-# front-proxy
+<h1><img src="src/admin/favicon.svg" alt="" width="32" height="32"> front-proxy</h1>
 
 [![npm](https://img.shields.io/npm/v/front-proxy)](https://www.npmjs.com/package/front-proxy)
 [![coverage](https://codecov.io/gh/gutomezencio/front-proxy/graph/badge.svg)](https://codecov.io/gh/gutomezencio/front-proxy)
@@ -78,6 +78,7 @@ Then open `http://local-dev.livedomain.com` (or `https://` once you've [set up c
 | ----------------------------------- | -------------------------------------------------------------------- | ---------- |
 | `front-proxy`                       | Start the proxy on ports `80` and `443`, adding your domains to `/etc/hosts` until it stops | Yes |
 | `front-proxy --persist-hosts`       | Same, but keep the domains in `/etc/hosts` after the proxy stops (`-p` for short)          | Yes |
+| `front-proxy --no-admin`            | Start without the [admin page](#admin-page)                          | Yes        |
 | `front-proxy add <host:port>`       | Add a domain to the proxy config                                     | No         |
 | `front-proxy remove <host>`         | Remove a domain from the proxy config                                | No         |
 | `front-proxy list`                  | List the configured domains                                          | No         |
@@ -99,6 +100,28 @@ Stopping the proxy (Ctrl+C) removes the block, unless you started it with `--per
 
 Requests for a domain that isn't configured get a `502` response.
 
+Hosts must be valid hostnames (letters, digits, hyphens and dots, like `myapp.local`). IP addresses, `localhost`, `front-proxy.localhost` and ports `80`/`443` (the proxy's own) are rejected. Entries in `proxyHosts.json` that don't pass these checks are skipped with a warning.
+
+## Admin page
+
+While the proxy runs, open [http://front-proxy.localhost](http://front-proxy.localhost) to manage your domains in the browser. The page:
+
+- lists the configured domains, with a dot showing whether something is listening on each port
+- adds and removes domains, and changes a domain's port
+- shows which certificate each domain uses, with the `generate-certs` command to copy when it has none
+- links to each active domain over HTTP (and HTTPS when it's on)
+
+Changes are saved to `proxyHosts.json` right away, like the CLI commands. The page then shows a banner until they're active: click **Apply now** to reload the routes, certificates and `/etc/hosts` block without restarting, or restart `front-proxy`.
+
+The proxy runs as root, so the page only accepts:
+
+- requests from this machine (`127.0.0.1`/`::1`), with the `front-proxy.localhost` host, which blocks LAN clients and DNS rebinding
+- changes sent from the page itself: its `Origin`, a JSON body and a random token generated each time the proxy starts
+
+Its responses use a strict Content Security Policy and can't be framed. To turn the page off, start with `front-proxy --no-admin`.
+
+For HTTPS on the admin page, the default certificate must include `front-proxy.localhost`. `generate-certs` adds it when it creates the default certificate. If yours was created by an older version, delete `~/.front-proxy/keys/_private-default-*.pem` and run `front-proxy generate-certs` again.
+
 ## HTTPS
 
 HTTPS on port `443` needs locally trusted certificates, which `front-proxy` creates with mkcert:
@@ -108,7 +131,7 @@ front-proxy generate-certs                            # every configured domain
 front-proxy generate-certs local-dev.livedomain.com   # a single domain
 ```
 
-The first run installs mkcert's local CA so browsers trust the certificates. It also creates a default certificate for `localhost`. Each domain then gets its own certificate, which the proxy serves through SNI. Domains without their own certificate fall back to the default one. If there's no default certificate, the proxy starts with HTTP only.
+The first run installs mkcert's local CA so browsers trust the certificates. It also creates a default certificate for `localhost` and `front-proxy.localhost`. Each domain then gets its own certificate, which the proxy serves through SNI. Domains without their own certificate fall back to the default one. If there's no default certificate, the proxy starts with HTTP only.
 
 HTTPS responses include an HSTS header (`includeSubDomains`, `preload`), so browsers remember to use HTTPS for those domains.
 
