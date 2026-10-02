@@ -3,6 +3,7 @@ import { adminHost, normalizeHost, validateCertName, validateHost, validatePort 
 describe('hosts validation', () => {
   it('normalizes hosts', () => {
     expect(normalizeHost('  My.Local. ')).toBe('my.local')
+    expect(normalizeHost(undefined)).toBe('')
   })
 
   it('accepts hostnames', () => {

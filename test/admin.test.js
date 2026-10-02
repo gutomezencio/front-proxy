@@ -126,6 +126,34 @@ describe('admin page', () => {
     expect(readConfig()).toEqual(before)
   })
 
+  it('rejects malformed bodies and unknown hosts', async () => {
+    expect((await send('POST', '/api/hosts', [1, 2])).statusCode).toBe(400)
+    expect(JSON.parse((await send('POST', '/api/hosts', { host: 'a.local' })).payload).error).toBe('Missing fields: port')
+    expect((await send('PUT', '/api/hosts/my.local', { port: 4000, host: 'x' })).statusCode).toBe(400)
+    expect((await send('PUT', '/api/hosts/my.local', { port: 80 })).statusCode).toBe(400)
+    expect((await send('DELETE', '/api/hosts/missing.local')).statusCode).toBe(404)
+  })
+
+  it('limits the number of hosts', async () => {
+    server.saveProxyHosts(
+      Object.fromEntries(Array.from({ length: 100 }, (_, i) => [`h${i}.local`, { port: 3000 + i }])),
+    )
+
+    const response = await send('POST', '/api/hosts', { host: 'one-more.local', port: 5000 })
+
+    expect(response.statusCode).toBe(400)
+    expect(JSON.parse(response.payload).error).toContain('up to 100 hosts')
+  })
+
+  it('reports when the config cannot be applied', async () => {
+    server.hostFilePath = join(dir, 'missing', 'hosts')
+
+    const response = await send('POST', '/api/apply')
+
+    expect(response.statusCode).toBe(500)
+    expect(JSON.parse(response.payload).error).toContain("Couldn't apply the config")
+  })
+
   it('applies the config to the running proxy and /etc/hosts', async () => {
     await send('POST', '/api/hosts', { host: 'new.local', port: target.address().port })
 

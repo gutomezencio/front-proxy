@@ -2,38 +2,19 @@
 // again; the checks here only give faster feedback. Data is rendered with textContent only.
 
 import { hydrateIcons, icon } from './icons.js';
+import {
+  hostProblem,
+  hostRows,
+  httpsProblem,
+  newCertHosts,
+  normalizeHost,
+  portProblem,
+  portStatusTitle,
+} from './lib.js';
 
 const token = document.querySelector('meta[name="front-proxy-token"]').content;
 
 const $ = (selector) => document.querySelector(selector);
-
-// Mirrors src/hosts-validation.js.
-const hostLabel = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
-const normalizeHost = (value) => value.trim().toLowerCase().replace(/\.$/, '');
-
-const hostProblem = (host) => {
-  if (!host) return 'Enter a host, eq.: myapp.local';
-  if (host.length > 253) return 'The host is longer than 253 characters';
-  const labels = host.split('.');
-  if (!labels.every((label) => hostLabel.test(label))) {
-    return 'Use letters, digits, hyphens and dots, eq.: myapp.local';
-  }
-  if (/^\d+$/.test(labels[labels.length - 1]))
-    return 'Use a hostname, not an IP address';
-  if (host === 'localhost') return "localhost can't be proxied";
-  if (host === state?.adminHost) return `${host} is reserved for this page`;
-  return null;
-};
-
-const portProblem = (value) => {
-  const text = String(value).trim();
-  const port = Number(text);
-  if (!/^\d{1,5}$/.test(text) || port < 1 || port > 65535)
-    return 'Use a port from 1 to 65535';
-  if (port === 80 || port === 443)
-    return `Port ${port} is used by front-proxy itself`;
-  return null;
-};
 
 const api = async (method, path, body) => {
   const options = { method, headers: { 'X-Front-Proxy-Token': token } };
@@ -119,26 +100,6 @@ const hint = (text) => {
   );
   node.dataset.tooltip = text;
   return node;
-};
-
-// Rows for every host in the config or active in the proxy, with what changed.
-const hostRows = () => {
-  const names = [
-    ...new Set([...Object.keys(state.config), ...Object.keys(state.active)]),
-  ].sort();
-
-  return names.map((host) => {
-    const config = state.config[host];
-    const active = state.active[host];
-    let change = null;
-
-    if (!active) change = 'added';
-    else if (!config) change = 'removed';
-    else if (config.port !== active.port || config.cert !== active.cert)
-      change = 'changed';
-
-    return { host, config, active, change, entry: config ?? active };
-  });
 };
 
 const copyLink = (text, label) => {
@@ -269,15 +230,6 @@ const openLink = (protocol, host) =>
     'a',
   );
 
-// Why HTTPS can't be opened for an active host, or null when it can. Without its own cert
-// the proxy serves the default one (localhost), which browsers reject for this domain.
-const httpsProblem = ({ config, active }) => {
-  if (!state.https) return 'HTTPS is off: generate certs and restart';
-  if (active.certStatus === 'own') return null;
-  if (config?.certStatus === 'own') return 'New cert saved: click Apply now';
-  return 'Needs its own cert (see Certificate)';
-};
-
 const linksCell = (row) => {
   if (!row.active) return el('td', { className: 'muted', textContent: '—' });
 
@@ -286,7 +238,7 @@ const linksCell = (row) => {
     {},
     el('div', { className: 'links' }, openLink('http', row.host)),
   );
-  const problem = httpsProblem(row);
+  const problem = httpsProblem(row, state.https);
 
   if (!problem) {
     links.firstChild.append(openLink('https', row.host));
@@ -350,19 +302,14 @@ const render = () => {
 
   $('#pending').hidden = !state.pending;
 
-  const rows = hostRows();
+  const rows = hostRows(state);
   const tbody = $('#hosts');
   tbody.replaceChildren(
     ...rows.map((row) => {
       const status = ports[row.host];
       const dot = el('span', {
         className: `dot ${status ?? ''}`,
-        title:
-          status === 'up'
-            ? `Something is listening on port ${row.entry.port}`
-            : status === 'down'
-              ? `Nothing is listening on port ${row.entry.port}`
-              : 'Checking…',
+        title: portStatusTitle(status, row.entry.port),
       });
       dot.dataset.host = row.host;
 
@@ -461,8 +408,9 @@ $('#confirm-remove-button').addEventListener('click', async () => {
 $('#add-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
-  const host = normalizeHost(form.host.value);
-  const problem = hostProblem(host) || portProblem(form.port.value);
+  const host = normalizeHost(form.elements.host.value);
+  const problem =
+    hostProblem(host, state?.adminHost) || portProblem(form.elements.port.value);
   const errorLine = $('#add-error');
 
   if (problem) {
@@ -475,7 +423,7 @@ $('#add-form').addEventListener('submit', async (event) => {
   try {
     state = await api('POST', '/api/hosts', {
       host,
-      port: Number(form.port.value),
+      port: Number(form.elements.port.value),
     });
     form.reset();
     render();
@@ -496,12 +444,7 @@ $('#apply').addEventListener('click', async (event) => {
   try {
     const before = state;
     const result = await api('POST', '/api/apply');
-    // Hosts whose own cert the proxy serves now, but didn't before applying.
-    const newCerts = Object.keys(result.active).filter(
-      (host) =>
-        result.active[host].certStatus === 'own' &&
-        before?.active[host]?.certStatus !== 'own',
-    );
+    const newCerts = newCertHosts(before, result);
     state = result;
     render();
 

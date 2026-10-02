@@ -20,6 +20,7 @@ const token = randomBytes(32).toString('hex');
 const staticFiles = {
   '/': { file: 'index.html', type: 'text/html; charset=utf-8' },
   '/app.js': { file: 'app.js', type: 'text/javascript; charset=utf-8' },
+  '/lib.js': { file: 'lib.js', type: 'text/javascript; charset=utf-8' },
   '/icons.js': { file: 'icons.js', type: 'text/javascript; charset=utf-8' },
   '/app.css': { file: 'app.css', type: 'text/css; charset=utf-8' },
   '/favicon.svg': { file: 'favicon.svg', type: 'image/svg+xml' },

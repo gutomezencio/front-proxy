@@ -148,6 +148,28 @@ describe('Server', () => {
       expect(readHosts(server)).toBe('127.0.0.1 localhost\n127.0.0.1 other.local\n')
     })
 
+    it('writeHostsFile writes nothing without hosts, and cleanHostsFile keeps the final newline', () => {
+      const server = createServer(dir)
+
+      server.writeHostsFile()
+
+      expect(readHosts(server)).toBe('127.0.0.1 localhost\n')
+
+      fs.writeFileSync(server.hostFilePath, '# <FRONT-PROXY-HOSTS>\n# </FRONT-PROXY-HOSTS>\n')
+      server.cleanHostsFile()
+
+      expect(readHosts(server)).toBe('\n')
+    })
+
+    it('stop runs once', async () => {
+      const server = createServer(dir)
+
+      jest.spyOn(process, 'exit').mockImplementation(() => {})
+      await Promise.all([server.stop(), server.stop()])
+
+      expect(process.exit).toHaveBeenCalledTimes(1)
+    })
+
     it('stop removes the hosts, unless they are persisted', async () => {
       const server = createServer(dir, { 'my.local': { port: 3000 }, 'api.local': { port: 4000 } })
 
@@ -166,6 +188,23 @@ describe('Server', () => {
       expect(readHosts(server)).toBe('127.0.0.1 localhost\n')
       expect(process.exit).toHaveBeenCalledTimes(2)
     })
+  })
+
+  it('add, remove and list explain what went wrong', () => {
+    const server = createServer(dir, { 'my.local': { port: 3000 } })
+
+    jest.spyOn(console, 'error').mockImplementation(() => {})
+
+    server.add({ host: 'my.local', port: 4000 })
+    server.remove('other.local')
+
+    expect(console.error.mock.calls[0][0]).toContain('my.local is already added')
+    expect(console.error.mock.calls[1][0]).toContain('Host not found')
+    expect(readConfig(server)['my.local']).toEqual({ port: 3000 })
+
+    createServer(dir).list()
+
+    expect(console.log.mock.calls.at(-1)[0]).toContain('No hosts configured')
   })
 
   it('list prints every configured host', () => {
