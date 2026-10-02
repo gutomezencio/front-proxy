@@ -140,6 +140,33 @@ describe('admin page', () => {
     expect(hosts).toContain(`127.0.0.1 ${adminHost}`)
   })
 
+  it('marks a cert created with generate-certs as pending until the proxy loads it', async () => {
+    const state = async () => JSON.parse((await get('/api/state')).payload)
+
+    // What `generate-certs my.local` does: writes the cert files and sets "cert" in the config.
+    fs.writeFileSync(join(dir, '_private-my.local-cert.pem'), 'cert')
+    fs.writeFileSync(join(dir, '_private-my.local-key.pem'), 'key')
+    server.saveProxyHosts({ 'my.local': { port: target.address().port, cert: 'my.local' } })
+
+    const afterGenerate = await state()
+
+    expect(afterGenerate.pending).toBe(true)
+    expect(afterGenerate.config['my.local'].certStatus).toBe('own')
+    expect(afterGenerate.active['my.local'].certStatus).toBe('default')
+
+    // Cert already in the config and active, but its files were missing until now.
+    server.activeHosts = server.loadProxyHosts()
+
+    const filesAdded = await state()
+
+    expect(filesAdded.active['my.local'].certStatus).toBe('missing')
+    expect(filesAdded.pending).toBe(true)
+
+    server.secureContexts = { 'my.local': {} }
+
+    expect((await state()).pending).toBe(false)
+  })
+
   it('reports which configured ports have something listening', async () => {
     const closed = http.createServer()
     await new Promise((done) => closed.listen(0, '127.0.0.1', done))

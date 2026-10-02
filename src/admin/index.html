@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en">
+
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -10,11 +11,13 @@
     <link rel="stylesheet" href="/app.css">
     <script type="module" src="/app.js"></script>
   </head>
+
   <body>
     <header class="container">
       <nav>
         <ul>
-          <li><strong class="brand"><span class="brand-icon"><span data-icon="logo"></span></span>front-proxy</strong></li>
+          <li><strong class="brand"><span class="brand-icon"><span data-icon="logo"></span></span>front-proxy</strong>
+          </li>
         </ul>
         <ul>
           <li><span class="chip" id="http-status"><span data-icon="globe"></span>HTTP :80</span></li>
@@ -25,10 +28,8 @@
 
     <main class="container">
       <hgroup class="intro">
-        <h1>Local domains</h1>
         <p>
-          Reach apps running on local ports through real domains. Add a domain and the port of your app,
-          click <strong>Apply now</strong>, then open the domain in any browser or tool.
+          Reach apps running on local ports through real domains.
         </p>
       </hgroup>
 
@@ -46,7 +47,9 @@
       <section>
         <hgroup>
           <h2><span data-icon="globe"></span>Hosts</h2>
-          <p>Each domain points to 127.0.0.1 in /etc/hosts while the proxy runs, and is proxied to its local port.</p>
+          <p>Each domain points to <code>127.0.0.1</code> in <code>/etc/hosts</code> while the proxy runs, and is
+            proxied to its
+            local port.</p>
         </hgroup>
         <div class="overflow-auto">
           <table class="striped">
@@ -72,7 +75,8 @@
           <fieldset class="add-fields">
             <label>
               Host
-              <input name="host" placeholder="myapp.local" autocomplete="off" spellcheck="false" required maxlength="253">
+              <input name="host" placeholder="myapp.local" autocomplete="off" spellcheck="false" required
+                maxlength="253">
             </label>
             <label>
               Port
@@ -105,4 +109,5 @@
       </article>
     </dialog>
   </body>
+
 </html>

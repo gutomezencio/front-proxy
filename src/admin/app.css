@@ -75,9 +75,35 @@ tr.removed td:not(:last-child) { text-decoration: line-through; color: var(--pic
 .port-edit input { margin: 0; width: 6.5rem; padding-block: 0.25rem; height: auto; }
 
 .cert-cell { display: flex; flex-direction: column; gap: 0.3rem; align-items: flex-start; }
-.cert-cell button { white-space: nowrap; }
+.cert-note {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  max-width: 18rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--fp-pending-border);
+  border-radius: var(--pico-border-radius);
+  background: var(--fp-pending-bg);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+.cert-note > .icon { color: var(--fp-pending-border); margin-top: 0.1rem; }
+.cert-note p { margin: 0 0 0.3rem; }
+.copy-link { display: inline-flex; align-items: center; gap: 0.3rem; font-weight: 500; }
 
-.links a { margin-right: 0.6rem; white-space: nowrap; }
+.links { display: flex; flex-direction: column; gap: 0.35rem; align-items: flex-start; }
+.links a { white-space: nowrap; }
+.with-hint { display: inline-flex; align-items: center; gap: 0.35rem; white-space: nowrap; }
+.link-disabled {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--pico-muted-color);
+  opacity: 0.6;
+  cursor: not-allowed;
+  text-decoration: line-through;
+}
+.hint { display: inline-flex; color: var(--pico-primary); cursor: help; border-bottom: none !important; }
 
 .add-fields {
   display: grid;
@@ -117,6 +143,10 @@ button { justify-content: center; }
 #message[hidden] { display: none; }
 #message .icon { color: var(--fp-up); }
 #message.error .icon { color: var(--fp-down); }
+#message > .icon { margin-top: 0.2rem; }
+#message { align-items: flex-start; }
+.message-tip { display: flex; gap: 0.35rem; align-items: flex-start; margin-top: 0.3rem; color: var(--pico-muted-color); }
+#message .message-tip .icon { color: var(--pico-primary); margin-top: 0.15rem; }
 
 h2 { display: flex; align-items: center; gap: 0.5rem; }
 h2 .icon { color: var(--pico-primary); }

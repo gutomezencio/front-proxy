@@ -133,6 +133,8 @@ front-proxy generate-certs local-dev.livedomain.com   # a single domain
 
 The first run installs mkcert's local CA so browsers trust the certificates. It also creates a default certificate for `localhost` and `front-proxy.localhost`. Each domain then gets its own certificate, which the proxy serves through SNI. Domains without their own certificate fall back to the default one. If there's no default certificate, the proxy starts with HTTP only.
 
+If Chrome still says "Not secure" for a domain after its certificate was created and applied, fully quit Chrome (Cmd+Q on macOS) and open it again. Chrome remembers a certificate error it saw before, or one you clicked through, until it restarts. Firefox only trusts mkcert's CA when `nss` is installed (`brew install nss`) before running `generate-certs`.
+
 HTTPS responses include an HSTS header (`includeSubDomains`, `preload`), so browsers remember to use HTTPS for those domains.
 
 ### Custom certificates

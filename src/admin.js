@@ -142,16 +142,34 @@ export const registerAdmin = (server, proxy) => {
       Object.entries(hosts).map(([host, entry]) => [host, { ...entry, certStatus: proxy.certStatus(entry) }]),
     );
 
+  // For active hosts, 'own' means the running proxy loaded the cert (applyConfig() or start()),
+  // not just that its files exist now, e.g. right after `generate-certs` filled in missing files.
+  const describeActive = (hosts) =>
+    Object.fromEntries(
+      Object.entries(hosts).map(([host, entry]) => {
+        let certStatus = 'default';
+
+        if (entry.cert) {
+          certStatus = proxy.secureContexts?.[host] ? 'own' : 'missing';
+        }
+
+        return [host, { ...entry, certStatus }];
+      }),
+    );
+
   const getState = () => {
-    const config = proxy.loadProxyHosts({ quiet: true });
-    const active = proxy.activeHosts ?? {};
+    const config = describe(proxy.loadProxyHosts({ quiet: true }));
+    const active = describeActive(proxy.activeHosts ?? {});
+    const certsToLoad = Object.keys(config).some(
+      (host) => config[host].certStatus === 'own' && active[host] && active[host].certStatus !== 'own',
+    );
 
     return {
       adminHost,
       https: Boolean(proxy.ServerHTTPS),
-      active: describe(active),
-      config: describe(config),
-      pending: !sameHosts(config, active),
+      active,
+      config,
+      pending: !sameHosts(config, active) || certsToLoad,
     };
   };
 
