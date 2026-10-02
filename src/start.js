@@ -6,11 +6,11 @@ import { getConfigDir } from './config-dir.js';
 import { colors, info } from './output.js';
 
 // yargs prints usage and exits here on a bad command, before any sudo prompt.
-const { command, value, persistHosts } = parseCliArgs();
+const { command, value, persistHosts, admin } = parseCliArgs();
 
 const commandArgs =
   command === 'start'
-    ? persistHosts ? ['--persist-hosts'] : []
+    ? [...(persistHosts ? ['--persist-hosts'] : []), ...(admin ? [] : ['--no-admin'])]
     : [command, ...(value === undefined ? [] : [value])];
 
 const nodeArgs = [resolve(import.meta.dirname, 'proxy-server.js')];

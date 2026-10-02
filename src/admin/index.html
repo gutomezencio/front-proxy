@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="front-proxy-token" content="__FRONT_PROXY_TOKEN__">
+    <title>front-proxy</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/vendor/pico.min.css">
+    <link rel="stylesheet" href="/app.css">
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <header class="container">
+      <nav>
+        <ul>
+          <li><strong class="brand"><span class="brand-icon"><span data-icon="logo"></span></span>front-proxy</strong></li>
+        </ul>
+        <ul>
+          <li><span class="chip" id="http-status"><span data-icon="globe"></span>HTTP :80</span></li>
+          <li><span class="chip" id="https-status">HTTPS</span></li>
+        </ul>
+      </nav>
+    </header>
+
+    <main class="container">
+      <hgroup class="intro">
+        <h1>Local domains</h1>
+        <p>
+          Reach apps running on local ports through real domains. Add a domain and the port of your app,
+          click <strong>Apply now</strong>, then open the domain in any browser or tool.
+        </p>
+      </hgroup>
+
+      <article id="pending" class="pending-banner" hidden>
+        <span data-icon="info"></span>
+        <div class="pending-text">
+          <strong>Changes saved, not active yet.</strong>
+          <p>Apply them to write them to /etc/hosts and the proxy, or restart front-proxy.</p>
+        </div>
+        <button type="button" id="apply"><span data-icon="apply"></span>Apply now</button>
+      </article>
+
+      <p id="message" role="status" hidden></p>
+
+      <section>
+        <hgroup>
+          <h2><span data-icon="globe"></span>Hosts</h2>
+          <p>Each domain points to 127.0.0.1 in /etc/hosts while the proxy runs, and is proxied to its local port.</p>
+        </hgroup>
+        <div class="overflow-auto">
+          <table class="striped">
+            <thead>
+              <tr>
+                <th scope="col"><span class="visually-hidden">Status</span></th>
+                <th scope="col">Host</th>
+                <th scope="col">Port</th>
+                <th scope="col">Certificate</th>
+                <th scope="col">Open</th>
+                <th scope="col"><span class="visually-hidden">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody id="hosts"></tbody>
+          </table>
+        </div>
+        <p id="empty" class="muted" hidden>No hosts yet. Add one below.</p>
+      </section>
+
+      <section>
+        <h2><span data-icon="plus"></span>Add a host</h2>
+        <form id="add-form" novalidate>
+          <fieldset class="add-fields">
+            <label>
+              Host
+              <input name="host" placeholder="myapp.local" autocomplete="off" spellcheck="false" required maxlength="253">
+            </label>
+            <label>
+              Port
+              <input name="port" type="number" placeholder="3000" min="1" max="65535" required>
+            </label>
+            <button type="submit"><span data-icon="plus"></span>Add</button>
+          </fieldset>
+          <small id="add-error" class="field-error" hidden></small>
+        </form>
+      </section>
+    </main>
+
+    <footer class="container muted config-note">
+      <span data-icon="file"></span>
+      <small>
+        Changes are saved to proxyHosts.json right away, but only take effect after you click
+        <strong>Apply now</strong> (or restart front-proxy), because the domains have to be written to /etc/hosts.
+        The CLI (<code>front-proxy add / remove / list</code>) edits the same file.
+      </small>
+    </footer>
+
+    <dialog id="confirm-remove">
+      <article>
+        <h3>Remove host?</h3>
+        <p><strong id="confirm-host"></strong> will be removed from the config.</p>
+        <footer>
+          <button type="button" class="secondary" data-close><span data-icon="x"></span>Cancel</button>
+          <button type="button" id="confirm-remove-button"><span data-icon="trash"></span>Remove</button>
+        </footer>
+      </article>
+    </dialog>
+  </body>
+</html>

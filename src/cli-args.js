@@ -1,6 +1,6 @@
 import yargs from 'yargs'
 
-// Returns { command, value, persistHosts }. Running with no command means "start the servers".
+// Returns { command, value, persistHosts, admin }. Running with no command means "start the servers".
 export const parseCliArgs = (args = process.argv.slice(2)) => {
   const argv = yargs()
     .scriptName('front-proxy')
@@ -10,6 +10,10 @@ export const parseCliArgs = (args = process.argv.slice(2)) => {
         type: 'boolean',
         default: false,
         describe: 'Keep the hosts in /etc/hosts after the proxy stops',
+      }).option('admin', {
+        type: 'boolean',
+        default: true,
+        describe: 'Serve the admin page at http://front-proxy.localhost (--no-admin turns it off)',
       }),
     )
     .command('add <host:port>', 'Add a domain to the proxy list, eq.: myhost:3000')
@@ -32,5 +36,6 @@ export const parseCliArgs = (args = process.argv.slice(2)) => {
     command,
     value: value === undefined ? undefined : String(value),
     persistHosts: Boolean(argv.persistHosts),
+    admin: argv.admin !== false,
   }
 }

@@ -54,6 +54,24 @@ describe('Server', () => {
     expect(server.loadProxyHosts()).toEqual({ 'my.local': { port: 3000 } })
   })
 
+  it('skips config entries that could inject into the hosts file or escape the keys folder', () => {
+    const server = createServer(dir)
+
+    jest.spyOn(console, 'warn').mockImplementation(() => {})
+    fs.writeFileSync(
+      server.proxyHostsPath,
+      JSON.stringify({
+        'my.local': { port: 3000 },
+        'evil.local\n1.2.3.4 bank.com': { port: 3000 },
+        'loop.local': { port: 443 },
+        'path.local': { port: 3000, cert: '../../etc/x' },
+      }),
+    )
+
+    expect(server.loadProxyHosts()).toEqual({ 'my.local': { port: 3000 } })
+    expect(console.warn).toHaveBeenCalledTimes(3)
+  })
+
   it('add saves the host to the config without touching the hosts file', () => {
     const server = createServer(dir)
 
@@ -184,6 +202,10 @@ describe('Server', () => {
       expect(proxied.statusCode).toBe(200)
       expect(proxied.payload).toBe('hello from /page')
       expect(unknown.statusCode).toBe(502)
+
+      const prototypeKey = await hapiServer.inject({ url: '/', headers: { host: 'constructor' } })
+
+      expect(prototypeKey.statusCode).toBe(502)
     })
   })
 })
