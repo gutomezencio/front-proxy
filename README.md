@@ -4,7 +4,7 @@
 [![coverage](https://codecov.io/gh/gutomezencio/front-proxy/graph/badge.svg)](https://codecov.io/gh/gutomezencio/front-proxy)
 [![audit](https://github.com/gutomezencio/front-proxy/actions/workflows/audit.yml/badge.svg)](https://github.com/gutomezencio/front-proxy/actions/workflows/audit.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/gutomezencio/front-proxy/badge)](https://scorecard.dev/viewer/?uri=github.com/gutomezencio/front-proxy)
-[![Socket Badge](https://badge.socket.dev/npm/package/front-proxy/0.7.0)](https://badge.socket.dev/npm/package/front-proxy/0.7.0)
+[![Socket Badge](https://badge.socket.dev/npm/package/front-proxy/0.7.1)](https://badge.socket.dev/npm/package/front-proxy/0.7.1)
 
 Reach apps on local ports, like `localhost:3000`, through real-looking domains, like `local-dev.mylivedomain.com`, over HTTP or HTTPS.
 
