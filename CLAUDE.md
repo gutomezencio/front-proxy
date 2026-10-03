@@ -23,6 +23,8 @@ npm run test:coverage          # same, with V8 coverage into coverage/ (CI uploa
 # 2. Approve and merge the PR. "Publish" (.github/workflows/publish.yml) then
 #    publishes that version to npm via trusted publishing (keep that file name,
 #    npm is configured for it) and creates the vX.Y.Z tag and GitHub release.
+#    It packs the tarball once, publishes that file and attaches it to the
+#    release with its Sigstore provenance bundle (.sigstore.json).
 # Don't bump the version locally.
 
 # CLI commands (same for `front-proxy`, `npm run start:root --`, or `node src/proxy-server.js`)
@@ -33,9 +35,12 @@ front-proxy generate-certs [host]     # needs the mkcert binary on PATH
 front-proxy [--persist-hosts|-p] [--no-admin]   # start the servers (-p keeps the /etc/hosts block after stopping)
 ```
 
+GitHub Actions are pinned to commit SHAs with a `# vX.Y.Z` comment, and each workflow has read-only top-level `permissions` with writes granted per job (OpenSSF Scorecard checks both). Dependabot (`.github/dependabot.yml`) keeps the pins current.
+
 Tests use Jest in native ESM mode (`"transform": {}`, so tests import `jest` from `@jest/globals`). `npm test` runs Jest with `--experimental-vm-modules`, which Jest's ESM mode requires. The repo has no linter and no build step.
 
 - `test/server.test.js` and `test/server-lifecycle.test.js` point each `Server` at temp files by overriding `hostFilePath`, `proxyHostsPath` and `keysPath`, so they never touch `/etc/hosts` or `~/.front-proxy`. `server.ports` set to `{ http: 0, https: 0 }` lets `start()` bind random ports, and `server.mkcertPath` points `generateCerts` at a fake mkcert script. HTTPS tests create throwaway certs with `openssl` (`test/helpers/certs.js`). Mock `process.exit` before calling `stop()`, and remove the signal listeners `start()` adds.
+- `test/hosts-validation.fuzz.test.js` fuzzes `src/hosts-validation.js` with `fast-check` property tests (`fc.assert(fc.property(...))`, which is also what the OpenSSF Scorecard Fuzzing check looks for).
 - `test/admin.test.js` covers the admin routes with `server.inject`; `test/admin-app.test.js` runs `src/admin/app.js` against `index.html` in jsdom (`@jest-environment jsdom`, `jest-environment-jsdom`) with a fake `fetch`. Pure page logic lives in `src/admin/lib.js` (unit tested in `test/admin-lib.test.js`), so keep `app.js` to DOM and fetch code.
 - The entry scripts (`bin-running.js`, `start.js`, `proxy-server.js`) run on import and stay thin: CLI dispatch is in `src/commands.js` (`runCommand`, `parseHostPort`) and the sudo/spawn arguments in `src/launcher.js`. `test/entry-points.test.js` imports the entry scripts with `child_process` mocked through `jest.unstable_mockModule`.
 

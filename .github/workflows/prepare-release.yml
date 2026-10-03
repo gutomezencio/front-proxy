@@ -13,9 +13,7 @@ on:
           - major
 
 permissions:
-  # Push the release branch and open the PR
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
   group: prepare-release
@@ -24,9 +22,13 @@ jobs:
   release-pr:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      # Push the release branch and open the PR
+      contents: write
+      pull-requests: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
       - run: npm ci
