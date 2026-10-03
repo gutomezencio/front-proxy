@@ -65,6 +65,7 @@
   ],
   "devDependencies": {
     "@jest/globals": "^30.5.2",
+    "fast-check": "^4.10.2",
     "jest": "^30.5.2",
     "jest-environment-jsdom": "^30.5.2"
   }

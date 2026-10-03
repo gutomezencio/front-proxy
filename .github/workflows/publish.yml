@@ -2,6 +2,7 @@ name: Publish
 
 # Runs when a release PR from prepare-release.yml is merged: publishes the
 # package.json version if npm doesn't have it yet, then creates the release.
+# The release carries the published tarball and its Sigstore provenance bundle.
 # npm's trusted publisher is configured for this file name, so keep it.
 on:
   push:
@@ -9,10 +10,7 @@ on:
     paths: [package.json]
 
 permissions:
-  # Create the tag and the GitHub release
-  contents: write
-  # OIDC token for npm trusted publishing (no NPM_TOKEN secret)
-  id-token: write
+  contents: read
 
 concurrency:
   group: publish
@@ -20,9 +18,16 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    permissions:
+      # Create the tag and the GitHub release
+      contents: write
+      # OIDC token for npm trusted publishing (no NPM_TOKEN secret) and for signing
+      id-token: write
+      # Store the build provenance attestation
+      attestations: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           # Trusted publishing needs npm 11.5.1+, which ships with Node 24
           node-version: 24
@@ -43,11 +48,29 @@ jobs:
         run: npm ci
       - if: steps.check.outputs.published == 'false'
         run: npm test
+
+      # Pack once, so npm and the GitHub release get the same signed file
+      - name: Pack the tarball
+        id: pack
+        if: steps.check.outputs.published == 'false'
+        run: echo "tarball=$(npm pack --silent)" >> "$GITHUB_OUTPUT"
       - if: steps.check.outputs.published == 'false'
-        run: npm publish
+        run: npm publish "./${{ steps.pack.outputs.tarball }}"
+
+      - name: Sign the tarball
+        id: attest
+        if: steps.check.outputs.published == 'false'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ steps.pack.outputs.tarball }}
 
       - name: Create the GitHub release
         if: steps.check.outputs.published == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "v${{ steps.check.outputs.version }}" --target "$GITHUB_SHA" --generate-notes
+          TARBALL: ${{ steps.pack.outputs.tarball }}
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          cp "$BUNDLE" "$TARBALL.sigstore.json"
+          gh release create "v${{ steps.check.outputs.version }}" --target "$GITHUB_SHA" --generate-notes \
+            "$TARBALL" "$TARBALL.sigstore.json"
