@@ -1,0 +1,17 @@
+# Snyk (https://snyk.io) policy file
+version: v1.25.0
+ignore:
+  # zod: memory use grows with each failing element of an array schema without a length
+  # limit (CVE-2023-54404). Every zod version is affected and there's no fix to upgrade to.
+  SNYK-JS-ZOD-20510278:
+    - '*':
+        reason: >-
+          Not reachable from untrusted input. front-proxy's own schemas have no arrays
+          (src/hosts-validation.ts, src/cli-args.ts). The admin API rejects bodies over
+          1 KB before zod parses them (payload.maxBytes in src/admin.ts) and only answers
+          127.0.0.1. The MCP SDK's zod schemas only parse messages from the local MCP
+          client that started `front-proxy mcp` over stdio. Expires so it's checked again
+          for a fixed zod release.
+        expires: 2027-04-07T00:00:00.000Z
+        created: 2026-10-07T00:00:00.000Z
+patch: {}
