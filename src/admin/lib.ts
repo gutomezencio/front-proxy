@@ -1,13 +1,27 @@
 // Pure helpers for the admin page: no DOM and no fetch, so they're unit tested in Node.
+// Type-only imports are erased, so the browser never loads the server modules.
+import type { DescribedEntry, DescribedHosts, PortStatus, ProxyState } from '../hosts-config.js';
 
-// Mirrors src/hosts-validation.js. The server validates again; this only gives faster feedback.
+export type { DescribedEntry, PortStatus, ProxyState };
+
+export type Change = 'added' | 'removed' | 'changed' | null;
+
+export type HostRow = {
+  host: string;
+  config: DescribedEntry | undefined;
+  active: DescribedEntry | undefined;
+  change: Change;
+  entry: DescribedEntry;
+};
+
+// Mirrors src/hosts-validation.ts. The server validates again; this only gives faster feedback.
 const hostLabel = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
 
-export const normalizeHost = (value) =>
+export const normalizeHost = (value: string) =>
   value.trim().toLowerCase().replace(/\.$/, '');
 
 // Returns an error message, or null when the host is valid.
-export const hostProblem = (host, adminHost) => {
+export const hostProblem = (host: string, adminHost?: string): string | null => {
   if (!host) return 'Enter a host, eq.: myapp.local';
   if (host.length > 253) return 'The host is longer than 253 characters';
   const labels = host.split('.');
@@ -23,7 +37,7 @@ export const hostProblem = (host, adminHost) => {
 };
 
 // Returns an error message, or null when the port is valid.
-export const portProblem = (value) => {
+export const portProblem = (value: unknown): string | null => {
   const text = String(value).trim();
   const port = Number(text);
   if (!/^\d{1,5}$/.test(text) || port < 1 || port > 65535)
@@ -34,7 +48,7 @@ export const portProblem = (value) => {
 };
 
 // Rows for every host in the config or active in the proxy, sorted, with what changed.
-export const hostRows = ({ config, active }) => {
+export const hostRows = ({ config, active }: { config: DescribedHosts; active: DescribedHosts }): HostRow[] => {
   const names = [
     ...new Set([...Object.keys(config), ...Object.keys(active)]),
   ].sort();
@@ -42,7 +56,7 @@ export const hostRows = ({ config, active }) => {
   return names.map((host) => {
     const configEntry = config[host];
     const activeEntry = active[host];
-    let change = null;
+    let change: Change = null;
 
     if (!activeEntry) change = 'added';
     else if (!configEntry) change = 'removed';
@@ -64,22 +78,28 @@ export const hostRows = ({ config, active }) => {
 
 // Why HTTPS can't be opened for an active host, or null when it can. Without its own cert
 // the proxy serves the default one (localhost), which browsers reject for this domain.
-export const httpsProblem = ({ config, active }, httpsOn) => {
+export const httpsProblem = (
+  { config, active }: Pick<HostRow, 'config' | 'active'>,
+  httpsOn: boolean,
+): string | null => {
   if (!httpsOn) return 'HTTPS is off: generate certs and restart';
-  if (active.certStatus === 'own') return null;
+  if (active?.certStatus === 'own') return null;
   if (config?.certStatus === 'own') return 'New cert saved: click Apply now';
   return 'Needs its own cert (see Certificate)';
 };
 
 // Hosts whose own cert the proxy serves in `after`, but didn't in `before`.
-export const newCertHosts = (before, after) =>
+export const newCertHosts = (
+  before: Pick<ProxyState, 'active'> | null,
+  after: Pick<ProxyState, 'active'>,
+) =>
   Object.keys(after.active).filter(
     (host) =>
       after.active[host].certStatus === 'own' &&
       before?.active[host]?.certStatus !== 'own',
   );
 
-export const portStatusTitle = (status, port) => {
+export const portStatusTitle = (status: PortStatus | undefined, port: number) => {
   if (status === 'up') return `Something is listening on port ${port}`;
   if (status === 'down') return `Nothing is listening on port ${port}`;
   return 'Checking…';

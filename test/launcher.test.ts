@@ -7,6 +7,7 @@ describe('launcher', () => {
   it('only the start command needs sudo', () => {
     expect(requiresSudo({ command: 'start' })).toBe(true)
     expect(requiresSudo({ command: 'list' })).toBe(false)
+    expect(requiresSudo({ command: 'mcp' })).toBe(false)
   })
 
   it('rebuilds the arguments for proxy-server.js', () => {
@@ -14,6 +15,7 @@ describe('launcher', () => {
     expect(commandArgs({ command: 'start', persistHosts: true, admin: false })).toEqual(['--persist-hosts', '--no-admin'])
     expect(commandArgs({ command: 'add', value: 'my.local:3000' })).toEqual(['add', 'my.local:3000'])
     expect(commandArgs({ command: 'generate-certs' })).toEqual(['generate-certs'])
+    expect(commandArgs({ command: 'mcp' })).toEqual(['mcp'])
   })
 
   it('runs start under sudo with the config dir, and the rest as the user', () => {

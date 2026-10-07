@@ -38,6 +38,10 @@ describe('parseCliArgs', () => {
     })
   })
 
+  it('parses mcp', () => {
+    expect(parseCliArgs(['mcp'])).toEqual({ command: 'mcp', value: undefined, persistHosts: false, admin: true })
+  })
+
   it('rejects unknown commands and --flags', () => {
     jest.spyOn(console, 'error').mockImplementation(() => {})
     jest.spyOn(process, 'exit').mockImplementation((code) => {
@@ -47,6 +51,7 @@ describe('parseCliArgs', () => {
     expect(() => parseCliArgs(['bogus'])).toThrow('exit 1')
     expect(() => parseCliArgs(['--add', 'my.local:3000'])).toThrow('exit 1')
     expect(() => parseCliArgs(['add', 'my.local:3000', '--persist-hosts'])).toThrow('exit 1')
+    expect(() => parseCliArgs(['mcp', 'extra'])).toThrow('exit 1')
 
     jest.restoreAllMocks()
   })

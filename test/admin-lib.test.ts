@@ -48,7 +48,7 @@ describe('admin page helpers', () => {
         'port.local': { port: 40 },
         'cert.local': { port: 5 },
       },
-    })
+    } as any)
 
     expect(rows.map(({ host, change }) => [host, change])).toEqual([
       ['cert.local', 'changed'],
@@ -62,19 +62,20 @@ describe('admin page helpers', () => {
   })
 
   it('httpsProblem explains why HTTPS is not available', () => {
-    const own = { certStatus: 'own' }
-    const none = { certStatus: 'default' }
+    // Partial entries: only certStatus matters here.
+    const own: any = { certStatus: 'own' }
+    const none: any = { certStatus: 'default' }
 
     expect(httpsProblem({ config: own, active: own }, false)).toMatch(/HTTPS is off/)
     expect(httpsProblem({ config: own, active: own }, true)).toBeNull()
     expect(httpsProblem({ config: own, active: none }, true)).toMatch(/Apply now/)
     expect(httpsProblem({ config: none, active: none }, true)).toMatch(/Needs its own cert/)
-    expect(httpsProblem({ active: none }, true)).toMatch(/Needs its own cert/)
+    expect(httpsProblem({ active: none } as any, true)).toMatch(/Needs its own cert/)
   })
 
   it('newCertHosts lists hosts whose own cert became active', () => {
-    const before = { active: { 'a.local': { certStatus: 'default' }, 'b.local': { certStatus: 'own' } } }
-    const after = {
+    const before: any = { active: { 'a.local': { certStatus: 'default' }, 'b.local': { certStatus: 'own' } } }
+    const after: any = {
       active: {
         'a.local': { certStatus: 'own' },
         'b.local': { certStatus: 'own' },

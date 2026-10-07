@@ -17,7 +17,9 @@
     "https",
     "mkcert",
     "localhost",
-    "cli"
+    "cli",
+    "mcp",
+    "model-context-protocol"
   ],
   "homepage": "https://github.com/gutomezencio/front-proxy#readme",
   "repository": {
@@ -28,33 +30,61 @@
     "url": "https://github.com/gutomezencio/front-proxy/issues"
   },
   "scripts": {
-    "dev": "node --watch src/proxy-server.js",
-    "start": "node src/proxy-server.js",
-    "start:root": "node src/start.js",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && node scripts/copy-admin-assets.js",
+    "typecheck": "tsc -p tsconfig.json && tsc -p test/tsconfig.json",
+    "prepack": "npm run build",
+    "dev": "npm run build && (tsc -p tsconfig.build.json --watch --preserveWatchOutput & node --watch-path=dist dist/proxy-server.js)",
+    "start": "npm run build && node dist/proxy-server.js",
+    "start:root": "npm run build && node dist/start.js",
     "test": "node --experimental-vm-modules --no-warnings=ExperimentalWarning node_modules/jest/bin/jest.js",
     "test:coverage": "npm test -- --coverage"
   },
   "bin": {
-    "front-proxy": "src/bin-running.js"
+    "front-proxy": "dist/bin-running.js"
   },
   "files": [
-    "src"
+    "dist"
   ],
   "jest": {
-    "transform": {},
+    "preset": "ts-jest/presets/default-esm",
+    "testMatch": [
+      "<rootDir>/test/**/*.test.ts"
+    ],
+    "moduleNameMapper": {
+      "^(\\.{1,2}/.*)\\.js$": "$1"
+    },
+    "transform": {
+      "^.+\\.ts$": [
+        "ts-jest",
+        {
+          "useESM": true,
+          "tsconfig": "test/tsconfig.json"
+        }
+      ]
+    },
     "coverageProvider": "v8",
     "collectCoverageFrom": [
-      "src/**/*.js"
+      "src/**/*.ts"
     ],
     "coverageReporters": [
       "text",
       "lcov"
-    ]
+    ],
+    "coverageThreshold": {
+      "global": {
+        "statements": 99.9,
+        "branches": 96.7,
+        "functions": 100,
+        "lines": 99.9
+      }
+    }
   },
   "dependencies": {
     "@hapi/h2o2": "^10.0.4",
     "@hapi/hapi": "^21.4.10",
-    "yargs": "^18.2.0"
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "yargs": "^18.2.0",
+    "zod": "^4.6.5"
   },
   "engines": {
     "node": ">=22.12.0"
@@ -65,8 +95,13 @@
   ],
   "devDependencies": {
     "@jest/globals": "^30.5.2",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22.20.5",
+    "@types/yargs": "^17.0.35",
     "fast-check": "^4.10.2",
     "jest": "^30.5.2",
-    "jest-environment-jsdom": "^30.5.2"
+    "jest-environment-jsdom": "^30.5.2",
+    "ts-jest": "^29.4.14",
+    "typescript": "~6.0.3"
   }
 }

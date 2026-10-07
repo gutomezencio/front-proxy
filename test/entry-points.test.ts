@@ -6,8 +6,11 @@ import { join } from 'path'
 // The entry scripts run on import, so each test sets process.argv first and imports a fresh
 // copy. child_process is mocked: nothing is spawned and mkcert never runs.
 
-const child = { on: jest.fn() }
-const spawn = jest.fn(() => child)
+const child = {
+  on: jest.fn<(event: string, listener: (code: number | null) => void) => void>(),
+  kill: jest.fn(),
+}
+const spawn = jest.fn<(command: string, args: string[], options: { env: NodeJS.ProcessEnv }) => typeof child>(() => child)
 
 jest.unstable_mockModule('child_process', () => ({
   spawn,
@@ -17,7 +20,7 @@ jest.unstable_mockModule('child_process', () => ({
 
 describe('entry points', () => {
   const argv = process.argv
-  const signals = ['SIGINT', 'SIGTERM', 'SIGHUP']
+  const signals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGHUP']
   let dir
   let listeners
 
@@ -29,6 +32,7 @@ describe('entry points', () => {
     jest.spyOn(console, 'error').mockImplementation(() => {})
     spawn.mockClear()
     child.on.mockClear()
+    child.kill.mockClear()
     jest.resetModules()
   })
 
@@ -56,11 +60,15 @@ describe('entry points', () => {
     expect(args).toContain(`FRONT_PROXY_HOME=${process.env.FRONT_PROXY_HOME}`)
     expect(args.at(-1)).toBe('--persist-hosts')
     expect(options.env.FRONT_PROXY_HOME).toBe(process.env.FRONT_PROXY_HOME)
-    expect(console.log.mock.calls[0][0]).toContain('front-proxy needs your password')
-    expect(fs.existsSync(join(process.env.FRONT_PROXY_HOME, 'proxyHosts.json'))).toBe(true)
+    expect(jest.mocked(console.log).mock.calls[0][0]).toContain('front-proxy needs your password')
+    expect(fs.existsSync(join(process.env.FRONT_PROXY_HOME!, 'proxyHosts.json'))).toBe(true)
+
+    // Ctrl+C also reaches the sudo child, which cleans up; the wrapper only waits for it.
+    process.emit('SIGINT')
+    expect(child.kill).not.toHaveBeenCalled()
 
     // The wrapper exits with the child's exit code.
-    const [, onExit] = child.on.mock.calls.find(([event]) => event === 'exit')
+    const [, onExit] = child.on.mock.calls.find(([event]) => event === 'exit')!
 
     onExit(3)
     expect(process.exitCode).toBe(3)
@@ -78,12 +86,32 @@ describe('entry points', () => {
     expect(console.log).not.toHaveBeenCalled()
   })
 
+  it('start.js passes signals on to a child that runs as the user, like the MCP server', async () => {
+    process.argv = ['node', 'front-proxy', 'mcp']
+
+    await import('../src/start.js')
+
+    const [executable, args] = spawn.mock.calls[0]
+
+    expect(executable).toBe(process.execPath)
+    expect(args.slice(1)).toEqual(['mcp'])
+
+    process.emit('SIGTERM')
+    expect(child.kill).toHaveBeenCalledWith('SIGTERM')
+
+    // A child killed by a signal has no exit code.
+    const [, onExit] = child.on.mock.calls.find(([event]) => event === 'exit')!
+
+    onExit(null)
+    expect(process.exitCode).toBeUndefined()
+  })
+
   it('proxy-server.js runs the command', async () => {
     process.argv = ['node', 'proxy-server.js', 'add', 'my.local:3000']
 
     await import('../src/proxy-server.js')
 
-    const config = JSON.parse(fs.readFileSync(join(process.env.FRONT_PROXY_HOME, 'proxyHosts.json'), 'utf8'))
+    const config = JSON.parse(fs.readFileSync(join(process.env.FRONT_PROXY_HOME!, 'proxyHosts.json'), 'utf8'))
 
     expect(config['my.local']).toEqual({ port: 3000 })
   })
@@ -94,6 +122,6 @@ describe('entry points', () => {
     await import('../src/proxy-server.js')
 
     expect(process.exitCode).toBe(1)
-    expect(console.error.mock.calls[0][0]).toContain('Port 443 is used by front-proxy itself')
+    expect(jest.mocked(console.error).mock.calls[0][0]).toContain('Port 443 is used by front-proxy itself')
   })
 })

@@ -47,9 +47,12 @@ jobs:
       - if: steps.check.outputs.published == 'false'
         run: npm ci
       - if: steps.check.outputs.published == 'false'
+        run: npm run typecheck
+      - if: steps.check.outputs.published == 'false'
         run: npm test
 
-      # Pack once, so npm and the GitHub release get the same signed file
+      # Pack once, so npm and the GitHub release get the same signed file.
+      # npm pack runs the prepack script, which builds dist/ from src/.
       - name: Pack the tarball
         id: pack
         if: steps.check.outputs.published == 'false'
