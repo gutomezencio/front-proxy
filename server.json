@@ -1,0 +1,30 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.gutomezencio/front-proxy",
+  "title": "front-proxy",
+  "description": "Map local domains (and HTTPS) to apps on local ports, OS-wide, via /etc/hosts and a reverse proxy.",
+  "websiteUrl": "https://github.com/gutomezencio/front-proxy#mcp-server",
+  "repository": {
+    "url": "https://github.com/gutomezencio/front-proxy",
+    "source": "github"
+  },
+  "version": "0.7.1",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "front-proxy",
+      "version": "0.7.1",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ]
+    }
+  ]
+}

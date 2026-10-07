@@ -1,0 +1,18 @@
+{
+  "name": "front-proxy",
+  "owner": {
+    "name": "Guto Mezêncio",
+    "url": "https://github.com/gutomezencio"
+  },
+  "metadata": {
+    "description": "front-proxy for Claude Code: map local domains and HTTPS to apps on local ports."
+  },
+  "plugins": [
+    {
+      "name": "front-proxy",
+      "source": "./plugins/front-proxy",
+      "description": "Map local domains (and HTTPS) to apps on local ports, through the front-proxy MCP server and a skill that knows when to use it.",
+      "category": "development"
+    }
+  ]
+}

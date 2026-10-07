@@ -32,6 +32,7 @@ jobs:
         with:
           node-version: 24
       - run: npm ci
+      - run: npm run typecheck
       - run: npm test
 
       - name: Bump the version
@@ -39,6 +40,8 @@ jobs:
         run: |
           VERSION=$(npm version ${{ inputs.bump }} --no-git-tag-version)
           echo "version=${VERSION#v}" >> "$GITHUB_OUTPUT"
+          # server.json (MCP Registry) and the Claude Code plugin carry the version too
+          npm run sync-version
 
       - name: Update the Socket badge in README.md
         run: |
@@ -53,9 +56,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c "release/v$VERSION"
-          git add package.json package-lock.json README.md
+          git add package.json package-lock.json README.md server.json plugins/front-proxy
           git commit -m "Release v$VERSION"
           git push origin "release/v$VERSION"
           gh pr create --base main --head "release/v$VERSION" \
             --title "Release v$VERSION" \
-            --body "Bumps the version to \`$VERSION\` and updates the Socket badge. Merging publishes \`front-proxy@$VERSION\` to npm and creates the \`v$VERSION\` GitHub release."
+            --body "Bumps the version to \`$VERSION\` in package.json, server.json and the Claude Code plugin, and updates the Socket badge. Merging publishes \`front-proxy@$VERSION\` to npm and creates the \`v$VERSION\` GitHub release."

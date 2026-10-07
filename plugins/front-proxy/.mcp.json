@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "front-proxy": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "front-proxy@0.7.1",
+        "mcp"
+      ]
+    }
+  }
+}

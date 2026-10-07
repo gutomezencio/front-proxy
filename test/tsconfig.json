@@ -1,0 +1,9 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "jest"],
+    // Tests lean on mocks and partial fakes, so untyped parameters are fine here.
+    "noImplicitAny": false
+  },
+  "include": [".", "../src"]
+}

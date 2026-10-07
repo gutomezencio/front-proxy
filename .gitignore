@@ -16,3 +16,6 @@ npm-debug.log
 .package-lock.json
 keys/private-*
 keys/_private-*
+dist/
+mcpb/
+*.mcpb
