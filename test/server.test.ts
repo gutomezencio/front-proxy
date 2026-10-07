@@ -1,4 +1,5 @@
 import { jest } from '@jest/globals'
+import type { AddressInfo } from 'net'
 import fs from 'fs'
 import http from 'http'
 import os from 'os'
@@ -164,7 +165,7 @@ describe('Server', () => {
     it('stop runs once', async () => {
       const server = createServer(dir)
 
-      jest.spyOn(process, 'exit').mockImplementation(() => {})
+      jest.spyOn(process, 'exit').mockImplementation((() => undefined) as never)
       await Promise.all([server.stop(), server.stop()])
 
       expect(process.exit).toHaveBeenCalledTimes(1)
@@ -173,7 +174,7 @@ describe('Server', () => {
     it('stop removes the hosts, unless they are persisted', async () => {
       const server = createServer(dir, { 'my.local': { port: 3000 }, 'api.local': { port: 4000 } })
 
-      jest.spyOn(process, 'exit').mockImplementation(() => {})
+      jest.spyOn(process, 'exit').mockImplementation((() => undefined) as never)
 
       server.writeHostsFile()
       server.persistHosts = true
@@ -198,13 +199,23 @@ describe('Server', () => {
     server.add({ host: 'my.local', port: 4000 })
     server.remove('other.local')
 
-    expect(console.error.mock.calls[0][0]).toContain('my.local is already added')
-    expect(console.error.mock.calls[1][0]).toContain('Host not found')
+    expect(jest.mocked(console.error).mock.calls[0][0]).toContain('my.local is already added')
+    expect(jest.mocked(console.error).mock.calls[1][0]).toContain('Host not found')
     expect(readConfig(server)['my.local']).toEqual({ port: 3000 })
 
     createServer(dir).list()
 
-    expect(console.log.mock.calls.at(-1)[0]).toContain('No hosts configured')
+    expect(jest.mocked(console.log).mock.calls.at(-1)![0]).toContain('No hosts configured')
+
+    // The same limit as the admin page and the MCP server.
+    const full = createServer(
+      dir,
+      Object.fromEntries(Array.from({ length: 100 }, (_, i) => [`h${i}.local`, { port: 3000 + i }])),
+    )
+
+    full.add({ host: 'one-more.local', port: 5000 })
+
+    expect(jest.mocked(console.error).mock.calls[2][0]).toContain('front-proxy supports up to 100 hosts')
   })
 
   it('list prints every configured host', () => {
@@ -221,16 +232,16 @@ describe('Server', () => {
 
     beforeEach(async () => {
       target = http.createServer((req, res) => res.end(`hello from ${req.url}`))
-      await new Promise((done) => target.listen(0, '127.0.0.1', done))
+      await new Promise<void>((done) => target.listen(0, '127.0.0.1', done))
     })
 
     afterEach(async () => {
       await hapiServer.stop()
-      await new Promise((done) => target.close(done))
+      await new Promise<void>((done) => target.close(() => done()))
     })
 
     it('proxies a known host to its local port and returns 502 for unknown hosts', async () => {
-      const server = createServer(dir, { 'my.local': { port: target.address().port } })
+      const server = createServer(dir, { 'my.local': { port: (target.address() as AddressInfo).port } })
 
       hapiServer = Hapi.server({ port: 0 })
       await server.startServer(hapiServer)

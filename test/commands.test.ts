@@ -1,7 +1,14 @@
 import { jest } from '@jest/globals'
-import { UsageError, fail, parseHostPort, runCommand } from '../src/commands.js'
 
-const fakeServer = () => ({
+// The MCP server would take over stdin/stdout; dispatching to it is all that's tested here.
+const startMcpServer = jest.fn(() => Promise.resolve())
+
+jest.unstable_mockModule('../src/mcp.js', () => ({ startMcpServer }))
+
+const { UsageError, fail, parseHostPort, runCommand } = await import('../src/commands.js')
+
+// Only the methods runCommand calls.
+const fakeServer = (): any => ({
   add: jest.fn(),
   remove: jest.fn(),
   list: jest.fn(),
@@ -45,6 +52,20 @@ describe('commands', () => {
     expect(server.start).toHaveBeenCalledWith({ persistHosts: true, admin: false })
   })
 
+  it('runs the MCP server with the server, and reports when it fails to start', async () => {
+    const server = fakeServer()
+
+    await runCommand({ command: 'mcp' }, server)
+
+    expect(startMcpServer).toHaveBeenCalledWith(server)
+
+    startMcpServer.mockRejectedValueOnce(new Error('stdin closed'))
+    await runCommand({ command: 'mcp' }, server)
+
+    expect(process.exitCode).toBe(1)
+    expect(jest.mocked(console.error).mock.calls[0][0]).toContain('stdin closed')
+  })
+
   it('rejects an invalid generate-certs host before calling mkcert', () => {
     const server = fakeServer()
 
@@ -59,15 +80,15 @@ describe('commands', () => {
     await runCommand({ command: 'start' }, server)
 
     expect(process.exitCode).toBe(1)
-    expect(console.error.mock.calls[0][0]).toContain('port taken')
+    expect(jest.mocked(console.error).mock.calls[0][0]).toContain('port taken')
   })
 
   it('fail prints usage help for usage errors', () => {
     fail(new UsageError('Missing the port'))
     fail('plain string')
 
-    expect(console.error.mock.calls[0][0]).toContain('front-proxy add myhost.local:3000')
-    expect(console.error.mock.calls[1][0]).toContain('plain string')
+    expect(jest.mocked(console.error).mock.calls[0][0]).toContain('front-proxy add myhost.local:3000')
+    expect(jest.mocked(console.error).mock.calls[1][0]).toContain('plain string')
     expect(process.exitCode).toBe(1)
   })
 })

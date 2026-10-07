@@ -83,6 +83,7 @@ Then open `http://local-dev.livedomain.com` (or `https://` once you've [set up c
 | `front-proxy remove <host>`         | Remove a domain from the proxy config                                | No         |
 | `front-proxy list`                  | List the configured domains                                          | No         |
 | `front-proxy generate-certs [host]` | Create HTTPS certificates with mkcert, for one domain or all of them | No         |
+| `front-proxy mcp`                   | Run the [MCP server](#mcp-server) for code assistants, on stdio      | No         |
 | `front-proxy --help`                | Show the help                                                        | No         |
 
 Only starting the proxy asks for your password through `sudo`, because it binds ports `80`/`443` and edits `/etc/hosts`. The password isn't stored.
@@ -121,6 +122,42 @@ The proxy runs as root, so the page only accepts:
 Its responses use a strict Content Security Policy and can't be framed. To turn the page off, start with `front-proxy --no-admin`.
 
 For HTTPS on the admin page, the default certificate must include `front-proxy.localhost`. `generate-certs` adds it when it creates the default certificate. If yours was created by an older version, delete `~/.front-proxy/keys/_private-default-*.pem` and run `front-proxy generate-certs` again.
+
+## MCP server
+
+`front-proxy mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io) server on stdio, so code assistants (Claude Code, Cursor, VS Code, Windsurf…) can manage your domains for you. For example, they can map the app they just started to a domain and check that it answers.
+
+Add it to Claude Code:
+
+```bash
+claude mcp add front-proxy -- front-proxy mcp
+```
+
+Other clients take the same command in their MCP config:
+
+```json
+{
+  "mcpServers": {
+    "front-proxy": { "command": "front-proxy", "args": ["mcp"] }
+  }
+}
+```
+
+| Tool             | What it does                                                                                         |
+| ---------------- | ---------------------------------------------------------------------------------------------------- |
+| `list_hosts`     | List the configured domains, their ports and certificate status                                      |
+| `add_host`       | Map a domain to a local port (same checks as `front-proxy add`)                                      |
+| `update_host`    | Point a domain to another port                                                                       |
+| `remove_host`    | Remove a domain                                                                                      |
+| `generate_certs` | Create HTTPS certificates with mkcert, for one domain or all of them                                 |
+| `proxy_status`   | Whether the proxy runs, whether HTTPS is on, whether changes are waiting, and which apps are listening |
+| `apply_config`   | Load the saved config into the running proxy, like **Apply now** on the [admin page](#admin-page)    |
+
+The MCP server runs as you, without `sudo`, like `add` and `remove`. Its changes are saved to `proxyHosts.json`. To apply them, it calls the running proxy's admin API from `127.0.0.1` with the same per-run token and `Origin` as the admin page. Some things are left to you:
+
+- Starting and stopping the proxy needs your password, so the assistant asks you to run `front-proxy`.
+- `apply_config` needs the admin page on (the default). With `--no-admin`, restart the proxy to apply changes.
+- `generate_certs` can't type your password, so run `mkcert -install` once in a terminal before using it.
 
 ## HTTPS
 
@@ -189,20 +226,24 @@ To use `front-proxy` from a clone, or to work on it:
 git clone git@github.com:gutomezencio/front-proxy.git
 cd front-proxy
 npm install
-npm link    # point the global `front-proxy` command at this clone
+npm run build   # compile src/ (TypeScript) to dist/
+npm link        # point the global `front-proxy` command at this clone
 ```
 
-If you installed the npm package before, run `npm uninstall -g front-proxy` first so the two don't clash. `npm link` links the global command to the clone, so keep the folder in place and run `git pull` to update. `npm unlink -g front-proxy` removes the link. The clone uses the same `~/.front-proxy` config as the npm package.
+If you installed the npm package before, run `npm uninstall -g front-proxy` first so the two don't clash. `npm link` links the global command to the clone's `dist/`, so keep the folder in place and run `git pull` and `npm run build` to update. `npm unlink -g front-proxy` removes the link. The clone uses the same `~/.front-proxy` config as the npm package.
 
 ```bash
-npm start                    # run the proxy from src/, without the sudo wrapper
-npm run dev                  # same, restarting on file changes
-npm run start:root -- list   # run through the sudo wrapper, like the installed CLI
-npm test                     # run the tests
+npm run build                # compile src/ to dist/ and copy the admin page's static files
+npm start                    # build, then run the proxy from dist/, without the sudo wrapper
+npm run dev                  # same, rebuilding and restarting on file changes
+npm run start:root -- list   # build, then run through the sudo wrapper, like the installed CLI
+npm run typecheck            # type-check src/ and test/
+npm test                     # run the tests (Jest with ts-jest, straight from src/)
+npm run test:coverage        # same, with coverage (fails below the thresholds in package.json)
 npm pack --dry-run           # list the files that get published to npm
 ```
 
-The code is plain ES modules and runs directly, with no build step. Only `src/`, `README.md`, `LICENSE` and `package.json` are published (the `files` field in `package.json`).
+The code is TypeScript (strict, native ES modules) with [zod](https://zod.dev) schemas for everything it validates. `tsc` compiles it to `dist/`, and `npm pack`/`npm publish` build it first (the `prepack` script). Only `dist/`, `README.md`, `LICENSE` and `package.json` are published (the `files` field in `package.json`).
 
 ## License
 

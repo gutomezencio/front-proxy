@@ -6,7 +6,7 @@ const shield =
 const circle = '<circle cx="12" cy="12" r="10"/>';
 const lockBody = '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>';
 
-const icons = {
+const icons: Record<string, string> = {
   logo: '<path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/>',
   globe: `${circle}<path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>`,
   plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
@@ -32,7 +32,7 @@ const icons = {
   file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>',
 };
 
-export const icon = (name) => {
+export const icon = (name: string) => {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
 
   svg.setAttribute('viewBox', '0 0 24 24');
@@ -49,6 +49,6 @@ export const icon = (name) => {
 };
 
 // Fills the <span data-icon="name"> placeholders in the static HTML.
-export const hydrateIcons = (root = document) => {
-  root.querySelectorAll('[data-icon]').forEach((node) => node.replaceWith(icon(node.dataset.icon)));
+export const hydrateIcons = (root: ParentNode = document) => {
+  root.querySelectorAll<HTMLElement>('[data-icon]').forEach((node) => node.replaceWith(icon(String(node.dataset.icon))));
 };

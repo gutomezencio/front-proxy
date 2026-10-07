@@ -5,14 +5,15 @@ import { jest } from '@jest/globals'
 import fs from 'fs'
 import { join } from 'path'
 
-// Runs src/admin/app.js against index.html in jsdom, with fetch answered by a fake API.
-// app.js keeps its state at module level, so the tests run in order on one page.
+// Runs src/admin/app.ts against index.html in jsdom, with fetch answered by a fake API.
+// app.ts keeps its state at module level, so the tests run in order on one page.
 
 const adminDir = join(import.meta.dirname, '..', 'src', 'admin')
 
-const entry = (port, certStatus = 'default', cert) => ({ port, certStatus, ...(cert ? { cert } : {}) })
+const entry = (port, certStatus = 'default', cert?) => ({ port, certStatus, ...(cert ? { cert } : {}) })
 
-const api = {
+// A loose stand-in for the admin API's data.
+const api: any = {
   state: {
     adminHost: 'front-proxy.localhost',
     https: true,
@@ -34,7 +35,10 @@ const api = {
 
 const respond = (status, body) => ({ ok: status < 400, status, json: async () => body })
 
-const fakeFetch = async (url, { method = 'GET', headers = {}, body } = {}) => {
+const fakeFetch = async (
+  url,
+  { method = 'GET', headers = {}, body }: { method?: string; headers?: Record<string, string>; body?: string } = {},
+) => {
   api.requests.push({ url, method, headers, body: body && JSON.parse(body) })
 
   if (method !== 'GET' && api.failNext) {
@@ -49,7 +53,7 @@ const fakeFetch = async (url, { method = 'GET', headers = {}, body } = {}) => {
   const { state } = api
 
   if (method === 'POST' && url === '/api/hosts') {
-    const { host, port } = JSON.parse(body)
+    const { host, port } = JSON.parse(body!)
     state.config = { ...state.config, [host]: entry(port) }
     state.pending = true
     return respond(201, state)
@@ -57,7 +61,7 @@ const fakeFetch = async (url, { method = 'GET', headers = {}, body } = {}) => {
 
   if (method === 'PUT') {
     const host = decodeURIComponent(url.split('/').pop())
-    state.config = { ...state.config, [host]: { ...state.config[host], port: JSON.parse(body).port } }
+    state.config = { ...state.config, [host]: { ...state.config[host], port: JSON.parse(body!).port } }
     state.pending = true
     return respond(200, state)
   }
@@ -71,7 +75,7 @@ const fakeFetch = async (url, { method = 'GET', headers = {}, body } = {}) => {
 
   if (method === 'POST' && url === '/api/apply') {
     state.active = Object.fromEntries(
-      Object.entries(state.config).map(([host, value]) => [host, { ...value }]),
+      Object.entries(state.config).map(([host, value]) => [host, { ...(value as object) }]),
     )
     state.pending = false
     return respond(200, { ...state, httpsNeedsRestart: false })
@@ -80,7 +84,7 @@ const fakeFetch = async (url, { method = 'GET', headers = {}, body } = {}) => {
   return respond(404, { error: 'Not found' })
 }
 
-const flush = () => new Promise((done) => setTimeout(done, 0))
+const flush = () => new Promise<void>((done) => setTimeout(done, 0))
 const $ = (selector) => document.querySelector(selector)
 const $$ = (selector) => [...document.querySelectorAll(selector)]
 const row = (host) => $$('#hosts tr').find((tr) => tr.querySelector('.host-name').textContent === host)
@@ -99,7 +103,7 @@ describe('admin page', () => {
     const html = fs.readFileSync(join(adminDir, 'index.html'), 'utf8').replace('__FRONT_PROXY_TOKEN__', 'test-token')
 
     document.documentElement.innerHTML = html.replace(/^<!doctype html>\s*<html[^>]*>|<\/html>\s*$/gi, '')
-    global.fetch = jest.fn(fakeFetch)
+    global.fetch = jest.fn(fakeFetch) as unknown as typeof fetch
     // jsdom doesn't implement <dialog> or the clipboard.
     HTMLDialogElement.prototype.showModal = function showModal() { this.open = true }
     HTMLDialogElement.prototype.close = function close() { this.open = false }
@@ -150,7 +154,7 @@ describe('admin page', () => {
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('front-proxy generate-certs plain.local')
     expect(link.textContent).toBe('Copied')
 
-    navigator.clipboard.writeText.mockRejectedValueOnce(new Error('denied'))
+    jest.mocked(navigator.clipboard.writeText).mockRejectedValueOnce(new Error('denied'))
     await click(link)
 
     expect(message()).toContain('Copy this command: front-proxy generate-certs plain.local')
@@ -284,7 +288,7 @@ describe('admin page', () => {
   it('says HTTPS needs a restart when the proxy reports it', async () => {
     const original = global.fetch
 
-    global.fetch = jest.fn(async () => respond(200, { ...api.state, httpsNeedsRestart: true }))
+    global.fetch = jest.fn(async () => respond(200, { ...api.state, httpsNeedsRestart: true })) as unknown as typeof fetch
     await click($('#apply'))
     global.fetch = original
 
@@ -312,7 +316,7 @@ describe('admin page', () => {
   it('shows an error when the proxy is not reachable', async () => {
     const original = global.fetch
 
-    global.fetch = jest.fn(async () => respond(502, {}))
+    global.fetch = jest.fn(async () => respond(502, {})) as unknown as typeof fetch
     document.dispatchEvent(new Event('visibilitychange'))
     await flush()
     await flush()

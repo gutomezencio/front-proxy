@@ -1,5 +1,5 @@
 import { jest } from '@jest/globals'
-import { colors, error, spinner, success } from '../src/output.js'
+import { blankLine, colors, error, info, spinner, success, useStderr } from '../src/output.js'
 
 describe('output', () => {
   const env = { ...process.env }
@@ -76,8 +76,36 @@ describe('output', () => {
       if (isTTY) {
         Object.defineProperty(process.stdout, 'isTTY', isTTY)
       } else {
-        delete process.stdout.isTTY
+        delete (process.stdout as { isTTY?: boolean }).isTTY
       }
     }
+  })
+
+  it('useStderr sends everything to stderr and never animates', () => {
+    const isTTY = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY')
+    const write = jest.spyOn(process.stdout, 'write').mockImplementation(() => true)
+
+    Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true })
+    useStderr()
+
+    try {
+      info('Running')
+      blankLine()
+      spinner('Working…').succeed('Done')
+
+      expect(console.log).not.toHaveBeenCalled()
+      expect(write).not.toHaveBeenCalled()
+      expect(jest.mocked(console.error).mock.calls.map(([text]) => text)).toEqual(['ℹ Running\n', '', '✔ Done\n'])
+    } finally {
+      useStderr(false)
+      if (isTTY) {
+        Object.defineProperty(process.stdout, 'isTTY', isTTY)
+      } else {
+        delete (process.stdout as { isTTY?: boolean }).isTTY
+      }
+    }
+
+    blankLine()
+    expect(console.log).toHaveBeenCalledWith('')
   })
 })

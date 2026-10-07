@@ -1,4 +1,5 @@
 import { jest } from '@jest/globals'
+import type { AddressInfo } from 'net'
 import fs from 'fs'
 import http from 'http'
 import os from 'os'
@@ -19,7 +20,7 @@ describe('admin page', () => {
   const readConfig = () => JSON.parse(fs.readFileSync(server.proxyHostsPath, 'utf8'))
 
   // A mutating request as the admin page sends it; `overrides` replaces or drops (undefined) headers.
-  const send = (method, url, payload, overrides = {}) => {
+  const send = (method, url, payload?, overrides = {}) => {
     const headers = {
       host: adminHost,
       origin,
@@ -41,14 +42,14 @@ describe('admin page', () => {
     jest.spyOn(console, 'warn').mockImplementation(() => {})
 
     target = http.createServer((req, res) => res.end(`hello from ${req.url}`))
-    await new Promise((done) => target.listen(0, '127.0.0.1', done))
+    await new Promise<void>((done) => target.listen(0, '127.0.0.1', done))
 
     server = new Server()
     server.hostFilePath = join(dir, 'hosts')
     server.proxyHostsPath = join(dir, 'proxyHosts.json')
     server.keysPath = dir
     fs.writeFileSync(server.hostFilePath, '127.0.0.1 localhost\n')
-    server.saveProxyHosts({ 'my.local': { port: target.address().port } })
+    server.saveProxyHosts({ 'my.local': { port: (target.address() as AddressInfo).port } })
     server.adminEnabled = true
 
     hapiServer = Hapi.server({ port: 0 })
@@ -60,7 +61,7 @@ describe('admin page', () => {
 
   afterEach(async () => {
     await hapiServer.stop()
-    await new Promise((done) => target.close(done))
+    await new Promise<void>((done) => target.close(() => done()))
     jest.restoreAllMocks()
     fs.rmSync(dir, { recursive: true, force: true })
   })
@@ -85,7 +86,7 @@ describe('admin page', () => {
     const initial = JSON.parse((await get('/api/state')).payload)
 
     expect(initial.pending).toBe(false)
-    expect(initial.config['my.local']).toEqual({ port: target.address().port, certStatus: 'default' })
+    expect(initial.config['my.local']).toEqual({ port: (target.address() as AddressInfo).port, certStatus: 'default' })
 
     const added = await send('POST', '/api/hosts', { host: ' New.Local ', port: 4000 })
 
@@ -107,7 +108,9 @@ describe('admin page', () => {
     expect((await send('POST', '/api/hosts', body, { origin: 'http://evil.com' })).statusCode).toBe(403)
     expect((await send('POST', '/api/hosts', body, { origin: undefined })).statusCode).toBe(403)
     expect((await send('POST', '/api/hosts', body, { 'x-front-proxy-token': 'nope' })).statusCode).toBe(403)
+    expect((await send('POST', '/api/hosts', body, { 'x-front-proxy-token': undefined })).statusCode).toBe(403)
     expect((await send('POST', '/api/hosts', body, { 'content-type': 'text/plain' })).statusCode).toBe(415)
+    expect((await send('POST', '/api/hosts', body, { 'content-type': undefined })).statusCode).toBe(415)
     expect((await send('POST', '/api/hosts', body, { host: 'evil.com' })).statusCode).toBe(502)
     expect((await get('/api/state', { remoteAddress: '192.168.1.5' })).statusCode).toBe(403)
     expect(readConfig()['evil.local']).toBeUndefined()
@@ -155,7 +158,7 @@ describe('admin page', () => {
   })
 
   it('applies the config to the running proxy and /etc/hosts', async () => {
-    await send('POST', '/api/hosts', { host: 'new.local', port: target.address().port })
+    await send('POST', '/api/hosts', { host: 'new.local', port: (target.address() as AddressInfo).port })
 
     const applied = await send('POST', '/api/apply')
     const proxied = await hapiServer.inject({ url: '/new', headers: { host: 'new.local' } })
@@ -174,7 +177,7 @@ describe('admin page', () => {
     // What `generate-certs my.local` does: writes the cert files and sets "cert" in the config.
     fs.writeFileSync(join(dir, '_private-my.local-cert.pem'), 'cert')
     fs.writeFileSync(join(dir, '_private-my.local-key.pem'), 'key')
-    server.saveProxyHosts({ 'my.local': { port: target.address().port, cert: 'my.local' } })
+    server.saveProxyHosts({ 'my.local': { port: (target.address() as AddressInfo).port, cert: 'my.local' } })
 
     const afterGenerate = await state()
 
@@ -197,9 +200,9 @@ describe('admin page', () => {
 
   it('reports which configured ports have something listening', async () => {
     const closed = http.createServer()
-    await new Promise((done) => closed.listen(0, '127.0.0.1', done))
-    const closedPort = closed.address().port
-    await new Promise((done) => closed.close(done))
+    await new Promise<void>((done) => closed.listen(0, '127.0.0.1', done))
+    const closedPort = (closed.address() as AddressInfo).port
+    await new Promise<void>((done) => closed.close(() => done()))
 
     await send('POST', '/api/hosts', { host: 'down.local', port: closedPort })
 

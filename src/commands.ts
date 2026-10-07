@@ -1,4 +1,7 @@
-import { normalizeHost, validateHost, validatePort } from './hosts-validation.js'
+import type Server from './server.js'
+import type { ParsedCommand } from './cli-args.js'
+import { hostInputSchema, normalizeHost, validatePort } from './hosts-validation.js'
+import { startMcpServer } from './mcp.js'
 import { colors, error } from './output.js'
 
 // Dispatches a parsed CLI command (from parseCliArgs) to a Server. Lives apart from
@@ -6,30 +9,29 @@ import { colors, error } from './output.js'
 
 export class UsageError extends Error {}
 
-export const fail = (err) => {
+export const fail = (err: unknown) => {
   process.exitCode = 1
 
   if (err instanceof UsageError) {
     return error(err.message, `Use host:port, eq.: ${colors.cyan('front-proxy add myhost.local:3000')}`)
   }
 
-  error('Something went wrong', err.message || String(err))
+  error('Something went wrong', err instanceof Error ? err.message : String(err))
 }
 
-// Throws a UsageError when the host isn't a valid hostname.
-const checkHost = (value) => {
-  const host = normalizeHost(value)
-  const problem = validateHost(host)
+// Returns the normalized host, or throws a UsageError when it isn't a valid hostname.
+const checkHost = (value: string) => {
+  const result = hostInputSchema.safeParse(value)
 
-  if (problem) {
-    throw new UsageError(problem)
+  if (!result.success) {
+    throw new UsageError(result.error.issues[0].message)
   }
 
-  return host
+  return result.data
 }
 
 // Returns { host, port } from "host:port", or throws a UsageError.
-export const parseHostPort = (value) => {
+export const parseHostPort = (value: string) => {
   const [rawHost, rawPort, ...rest] = value.split(':')
 
   if (!rawHost) {
@@ -47,7 +49,7 @@ export const parseHostPort = (value) => {
   const host = checkHost(rawHost)
   const { port, error: portError } = validatePort(rawPort)
 
-  if (portError) {
+  if (portError !== undefined) {
     throw new UsageError(portError)
   }
 
@@ -55,13 +57,16 @@ export const parseHostPort = (value) => {
 }
 
 // Async commands resolve once done; their errors are reported with fail().
-export const runCommand = ({ command, value, persistHosts, admin }, server) => {
+export const runCommand = (
+  { command, value, persistHosts, admin }: Partial<ParsedCommand> & Pick<ParsedCommand, 'command'>,
+  server: Server,
+) => {
   if (command === 'add') {
-    return server.add(parseHostPort(value))
+    return server.add(parseHostPort(String(value)))
   }
 
   if (command === 'remove') {
-    const [host] = value.split(':')
+    const [host] = String(value).split(':')
 
     return server.remove(normalizeHost(host))
   }
@@ -72,6 +77,10 @@ export const runCommand = ({ command, value, persistHosts, admin }, server) => {
 
   if (command === 'generate-certs') {
     return server.generateCerts(value === undefined ? true : checkHost(value)).catch(fail)
+  }
+
+  if (command === 'mcp') {
+    return startMcpServer(server).catch(fail)
   }
 
   return server.start({ persistHosts, admin }).catch(fail)

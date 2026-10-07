@@ -7,12 +7,13 @@ import { dirname, resolve } from 'path';
 import { promisify } from 'util';
 import { registerAdmin } from './admin.js';
 import { getConfigDir } from './config-dir.js';
-import { adminHost, validateCertName, validateHost, validatePort } from './hosts-validation.js';
-import { colors, error, info, spinner, success, warn } from './output.js';
+import { addHost, removeHost, type CertStatus } from './hosts-config.js';
+import { adminHost, hostEntryProblem, hostEntrySchema, type HostEntry, type ProxyHosts } from './hosts-validation.js';
+import { blankLine, colors, error, info, spinner, success, warn, type Spinner } from './output.js';
 
 const execFileAsync = promisify(execFile);
 
-const hostsFileMarker = (host) => `# > ${host} < Host added by front-proxy`;
+const hostsFileMarker = (host: string) => `# > ${host} < Host added by front-proxy`;
 
 // The proxy's /etc/hosts entries live between these lines, only while it runs.
 const hostsBlockStart = '# <FRONT-PROXY-HOSTS>';
@@ -21,21 +22,21 @@ const hostsBlockEnd = '# </FRONT-PROXY-HOSTS>';
 const hostsFileMarkerLine = /^# > \S+ < Host added by front-proxy$/;
 const hostsEntryLine = /^127\.0\.0\.1\s+\S+\s*$/;
 
-const buildHostsBlock = (hosts) =>
+const buildHostsBlock = (hosts: string[]) =>
   [
     hostsBlockStart,
     ...hosts.flatMap((host) => [hostsFileMarker(host), `127.0.0.1 ${host}`]),
     hostsBlockEnd,
   ].join('\n');
 
-const stopSignals = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+const stopSignals = ['SIGINT', 'SIGTERM', 'SIGHUP'] as const;
 
 const restartNote = colors.dim(
   `If the proxy is running, restart it or click Apply now at http://${adminHost} to apply this.`,
 );
 
 // Aligned "host  →  :port" rows, with the cert dimmed when there is one.
-const hostRows = (proxyHosts) => {
+const hostRows = (proxyHosts: ProxyHosts) => {
   const hosts = Object.keys(proxyHosts);
   const width = Math.max(...hosts.map((host) => host.length));
 
@@ -53,7 +54,30 @@ const defaultCertName = 'default';
 const proxyHostsComment =
   'front-proxy hosts: { "<domain>": { "port": <local port>, "cert": "<name>" } }. Managed by `front-proxy add` / `remove` / `generate-certs`. "cert" is optional and points to keys/_private-<name>-{cert,key}.pem, next to this file.';
 
+type CertFiles = { cert: Buffer; key: Buffer };
+
+// What generateCerts did, for the MCP server; the CLI only reads its output.
+export type CertsResult =
+  | { ok: false; error: string }
+  | { ok: true; created: string[]; failed: { name: string; error: string }[]; notConfigured: string[] };
+
 export default class Server {
+  hostFilePath: string;
+  proxyHostsPath: string;
+  keysPath: string;
+  adminEnabled: boolean;
+  ports: { http: number; https: number };
+  mkcertPath: string;
+  proxyHosts: ProxyHosts;
+  activeHosts?: ProxyHosts;
+  secureContexts?: Record<string, tls.SecureContext>;
+  persistHosts = false;
+  stopping = false;
+  startSpinner?: Spinner;
+  ServerHTTP?: Hapi.Server;
+  ServerHTTPS?: Hapi.Server;
+  tls?: tls.SecureContextOptions & { SNICallback: (servername: string, cb: (err: Error | null, ctx?: tls.SecureContext) => void) => void };
+
   constructor() {
     this.hostFilePath = resolve('/', 'etc/hosts');
     const configDir = getConfigDir();
@@ -70,22 +94,18 @@ export default class Server {
 
   // Entries that don't validate are skipped, so a hand-edited file can't inject lines
   // into /etc/hosts or point "cert" outside the keys folder.
-  loadProxyHosts({ quiet = false } = {}) {
+  loadProxyHosts({ quiet = false } = {}): ProxyHosts {
     if (!fs.existsSync(this.proxyHostsPath)) {
       return {};
     }
 
-    const config = JSON.parse(fs.readFileSync(this.proxyHostsPath, 'utf8'));
-    const hosts = {};
+    const config: Record<string, unknown> = JSON.parse(fs.readFileSync(this.proxyHostsPath, 'utf8'));
+    const hosts: ProxyHosts = {};
 
     Object.keys(config)
       .filter((key) => !key.startsWith('$'))
       .forEach((key) => {
-        const { port, cert } = config[key] || {};
-        const problem =
-          validateHost(key) ||
-          validatePort(port).error ||
-          (cert === undefined ? null : validateCertName(cert));
+        const problem = hostEntryProblem(key, config[key]);
 
         if (problem) {
           if (!quiet) {
@@ -94,13 +114,13 @@ export default class Server {
           return;
         }
 
-        hosts[key] = cert === undefined ? { port: Number(port) } : { port: Number(port), cert };
+        hosts[key] = hostEntrySchema.parse(config[key]);
       });
 
     return hosts;
   }
 
-  saveProxyHosts(proxyHosts) {
+  saveProxyHosts(proxyHosts: ProxyHosts) {
     this.proxyHosts = proxyHosts;
     fs.mkdirSync(dirname(this.proxyHostsPath), { recursive: true });
     fs.writeFileSync(
@@ -109,7 +129,7 @@ export default class Server {
     );
   }
 
-  getCertPaths(name) {
+  getCertPaths(name: string) {
     return {
       cert: resolve(this.keysPath, `_private-${name}-cert.pem`),
       key: resolve(this.keysPath, `_private-${name}-key.pem`),
@@ -117,12 +137,12 @@ export default class Server {
   }
 
   // A new host uses the cert named after it, when `generate-certs <host>` already created it.
-  hostEntry(host, port) {
+  hostEntry(host: string, port: number): HostEntry {
     return this.readCert(host) ? { port, cert: host } : { port };
   }
 
   // 'own' (its cert files exist), 'missing' (cert set, files not found) or 'default'.
-  certStatus({ cert }) {
+  certStatus({ cert }: HostEntry): CertStatus {
     if (!cert) {
       return 'default';
     }
@@ -130,7 +150,7 @@ export default class Server {
     return this.readCert(cert) ? 'own' : 'missing';
   }
 
-  readCert(name) {
+  readCert(name: string): CertFiles | null {
     const { cert, key } = this.getCertPaths(name);
 
     if (!fs.existsSync(cert) || !fs.existsSync(key)) {
@@ -141,7 +161,7 @@ export default class Server {
   }
 
   getSecureContexts(proxyHosts = this.proxyHosts) {
-    const contexts = {};
+    const contexts: Record<string, tls.SecureContext> = {};
 
     Object.keys(proxyHosts).forEach((host) => {
       const { cert: certName } = proxyHosts[host];
@@ -173,7 +193,7 @@ export default class Server {
     // What's routed and in /etc/hosts. proxyHosts.json can change while running (CLI or
     // admin page); applyConfig() makes those changes active.
     this.activeHosts = this.proxyHosts;
-    stopSignals.forEach((signal) => process.on(signal, () => this.stop({ fromSignal: true })));
+    stopSignals.forEach((signal) => process.on(signal, () => void this.stop({ fromSignal: true })));
 
     // Leftovers from a run that didn't stop cleanly, or from --persist-hosts.
     this.cleanHostsFile();
@@ -187,7 +207,7 @@ export default class Server {
       await this.startServers();
       this.writeHostsFile();
     } catch (err) {
-      this.startSpinner.fail("front-proxy couldn't start", err.message);
+      this.startSpinner.fail("front-proxy couldn't start", (err as Error).message);
       this.persistHosts = false;
       process.exitCode = 1;
 
@@ -278,14 +298,14 @@ export default class Server {
         hostsNote = `Hosts removed from ${this.hostFilePath}.`;
       } catch (err) {
         stopSpinner.stop();
-        error(`Couldn't clean ${this.hostFilePath}`, err.message);
+        error(`Couldn't clean ${this.hostFilePath}`, (err as Error).message);
         hostsNote = `Hosts may still be in ${this.hostFilePath}. The next start cleans them.`;
       }
     }
 
     await Promise.allSettled(
       [this.ServerHTTP, this.ServerHTTPS]
-        .filter(Boolean)
+        .filter((server) => server !== undefined)
         .map((server) => server.stop({ timeout: 1000 })),
     );
 
@@ -312,7 +332,7 @@ export default class Server {
     return { httpsNeedsRestart: !this.ServerHTTPS && Boolean(this.readCert(defaultCertName)) };
   }
 
-  async startServer(server) {
+  async startServer(server: Hapi.Server) {
     // start() sets it; tests call startServer() directly with proxyHosts only.
     this.activeHosts ??= this.proxyHosts;
 
@@ -329,9 +349,10 @@ export default class Server {
       path: '/{path*}',
       options: {
         handler(request, h) {
-          const [host] = (request.headers.host || '').split(':');
+          const [host] = String(request.headers.host ?? '').split(':');
           // hasOwn: a Host like "constructor" must not match Object.prototype.
-          const target = Object.hasOwn(proxy.activeHosts, host) ? proxy.activeHosts[host] : null;
+          const activeHosts = proxy.activeHosts ?? {};
+          const target = Object.hasOwn(activeHosts, host) ? activeHosts[host] : null;
 
           if (!target) {
             const adminHint = proxy.adminEnabled ? ` Manage the hosts at http://${adminHost}` : '';
@@ -367,10 +388,10 @@ export default class Server {
   cleanHostsFile() {
     const content = this.getHostFileContent();
     const lines = content.split('\n');
-    const kept = [];
-    const isLine = (line, expected) =>
+    const kept: string[] = [];
+    const isLine = (line: string | undefined, expected: string) =>
       line !== undefined && line.replace(/\r$/, '') === expected;
-    const matches = (line, regex) =>
+    const matches = (line: string | undefined, regex: RegExp) =>
       line !== undefined && regex.test(line.replace(/\r$/, ''));
     // Drops the blank line that was written before a removed entry.
     const dropBlankLine = () => {
@@ -436,18 +457,19 @@ export default class Server {
     fs.appendFileSync(this.hostFilePath, `${separator}${buildHostsBlock(hosts)}\n`);
   }
 
-  add({ host, port }) {
-    if (Object.hasOwn(this.proxyHosts, host)) {
-      return error(
-        `${host} is already added`,
-        `Remove it first with ${colors.cyan(`front-proxy remove ${host}`)}, or pick another host.`,
-      );
+  add({ host, port }: { host: string; port: number }) {
+    const change = addHost(this, host, port);
+
+    if (!change.ok) {
+      return change.status === 409
+        ? error(
+            `${host} is already added`,
+            `Remove it first with ${colors.cyan(`front-proxy remove ${host}`)}, or pick another host.`,
+          )
+        : error("Couldn't add the host", change.error);
     }
 
-    this.saveProxyHosts({
-      ...this.proxyHosts,
-      [host]: this.hostEntry(host, port),
-    });
+    this.proxyHosts = change.config;
 
     return success(
       'Host added',
@@ -457,18 +479,16 @@ export default class Server {
     );
   }
 
-  remove(host) {
-    if (!Object.hasOwn(this.proxyHosts, host)) {
+  remove(host: string) {
+    const change = removeHost(this, host);
+
+    if (!change.ok) {
       return error(
         'Host not found',
         `${colors.cyan(host)} isn't in the front-proxy config.`,
         `See the configured hosts with ${colors.cyan('front-proxy list')}`,
       );
     }
-
-    const { [host]: _, ...newProxyHosts } = this.proxyHosts;
-
-    this.saveProxyHosts(newProxyHosts);
 
     return success('Host removed', colors.cyan(host), '', restartNote);
   }
@@ -484,8 +504,8 @@ export default class Server {
     return info('Hosts', '', ...hostRows(this.proxyHosts));
   }
 
-  // Runs mkcert with its output captured, behind a spinner. Returns whether it worked.
-  async createCert(name, domains) {
+  // Runs mkcert with its output captured, behind a spinner. Returns the error, or null.
+  async createCert(name: string, domains: string[]): Promise<string | null> {
     const { cert, key } = this.getCertPaths(name);
     const certSpinner = spinner(`Creating cert for ${name}…`);
 
@@ -493,34 +513,65 @@ export default class Server {
       await execFileAsync(this.mkcertPath, ['-cert-file', cert, '-key-file', key, ...domains]);
       certSpinner.succeed(`Cert created for ${name}`, colors.dim(cert));
 
-      return true;
+      return null;
     } catch (err) {
-      certSpinner.fail(
-        `Couldn't create the cert for ${name}`,
-        ...(err.stderr || err.message).trim().split('\n'),
-      );
+      const { stderr, message } = err as Error & { stderr?: string };
+      const problem = (stderr || message).trim();
+
+      certSpinner.fail(`Couldn't create the cert for ${name}`, ...problem.split('\n'));
       process.exitCode = 1;
 
-      return false;
+      return problem;
     }
   }
 
-  async generateCerts(target) {
+  // Installs mkcert's local CA in the system trust store (a no-op once it is installed).
+  // Interactive (the CLI): no spinner, it can ask for a password and the spinner would hide it.
+  // Not interactive (the MCP server): no terminal at all, so a password prompt fails fast
+  // instead of waiting for input nobody can type.
+  async installLocalCA(interactive: boolean): Promise<string | null> {
+    if (interactive) {
+      info('Checking the mkcert local CA');
+      execFileSync(this.mkcertPath, ['-install'], { stdio: 'inherit' });
+      blankLine();
+
+      return null;
+    }
+
+    try {
+      await execFileAsync(this.mkcertPath, ['-install'], { timeout: 60_000 });
+
+      return null;
+    } catch (err) {
+      const { stderr, message } = err as Error & { stderr?: string };
+
+      return `mkcert -install failed: ${(stderr || message).trim()}. Run \`mkcert -install\` once in a terminal (it may ask for your password), then try again.`;
+    }
+  }
+
+  async generateCerts(target: string | true, { interactive = true } = {}): Promise<CertsResult> {
+    const fail = (title: string, ...details: string[]): CertsResult => {
+      error(title, ...details);
+
+      return { ok: false, error: [title, ...details].join('. ') };
+    };
+
     try {
       execFileSync(this.mkcertPath, ['-help'], { stdio: 'ignore' });
-    } catch (err) {
-      return error(
+    } catch {
+      return fail(
         'mkcert was not found in your PATH',
         `Install it with ${colors.cyan('brew install mkcert')} (macOS)`,
         `or follow ${colors.cyan('https://github.com/FiloSottile/mkcert#installation')}, then try again.`,
       );
     }
 
-    const hosts =
-      typeof target === 'string' ? [target] : Object.keys(this.proxyHosts);
+    // Read fresh: the MCP server is long-lived and the config can change under it.
+    const proxyHosts = this.loadProxyHosts({ quiet: true });
+    const hosts = typeof target === 'string' ? [target] : Object.keys(proxyHosts);
 
     if (hosts.length === 0) {
-      return error(
+      return fail(
         'No hosts configured',
         `Pass a host, eq.: ${colors.cyan('front-proxy generate-certs myhost.local')}`,
       );
@@ -528,26 +579,38 @@ export default class Server {
 
     fs.mkdirSync(this.keysPath, { recursive: true });
 
-    // Installs the local CA into the system trust store (no-op if already installed).
-    // No spinner: it can ask for a password, and the spinner would hide the prompt.
-    info('Checking the mkcert local CA');
-    execFileSync(this.mkcertPath, ['-install'], { stdio: 'inherit' });
-    console.log('');
+    const caError = await this.installLocalCA(interactive);
 
-    if (!this.readCert(defaultCertName)) {
-      await this.createCert(defaultCertName, ['localhost', '127.0.0.1', '::1', adminHost]);
+    if (caError) {
+      return fail("Couldn't install the mkcert local CA", caError);
     }
 
-    const proxyHosts = { ...this.proxyHosts };
+    const result = { ok: true as const, created: [] as string[], failed: [] as { name: string; error: string }[], notConfigured: [] as string[] };
+
+    if (!this.readCert(defaultCertName)) {
+      const defaultError = await this.createCert(defaultCertName, ['localhost', '127.0.0.1', '::1', adminHost]);
+
+      if (defaultError) {
+        result.failed.push({ name: defaultCertName, error: defaultError });
+      } else {
+        result.created.push(defaultCertName);
+      }
+    }
 
     for (const host of hosts) {
-      if (!(await this.createCert(host, [host]))) {
+      const certError = await this.createCert(host, [host]);
+
+      if (certError) {
+        result.failed.push({ name: host, error: certError });
         continue;
       }
+
+      result.created.push(host);
 
       if (Object.hasOwn(proxyHosts, host)) {
         proxyHosts[host] = { ...proxyHosts[host], cert: host };
       } else {
+        result.notConfigured.push(host);
         warn(
           `${host} isn't in the proxy config yet`,
           `Add it with ${colors.cyan(`front-proxy add ${host}:<port>`)} and it will use this cert.`,
@@ -556,5 +619,7 @@ export default class Server {
     }
 
     this.saveProxyHosts(proxyHosts);
+
+    return result;
   }
 }

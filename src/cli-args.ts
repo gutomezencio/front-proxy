@@ -1,7 +1,20 @@
 import yargs from 'yargs'
+import { z } from 'zod'
+
+export const commands = ['start', 'add', 'remove', 'list', 'generate-certs', 'mcp'] as const
+
+// What the entry scripts get back from parseCliArgs, checked with zod after yargs is done.
+export const parsedCommandSchema = z.object({
+  command: z.enum(commands),
+  value: z.string().optional(),
+  persistHosts: z.boolean(),
+  admin: z.boolean(),
+})
+
+export type ParsedCommand = z.infer<typeof parsedCommandSchema>
 
 // Returns { command, value, persistHosts, admin }. Running with no command means "start the servers".
-export const parseCliArgs = (args = process.argv.slice(2)) => {
+export const parseCliArgs = (args = process.argv.slice(2)): ParsedCommand => {
   const argv = yargs()
     .scriptName('front-proxy')
     .command('$0', 'Start the proxy servers on ports 80 and 443', (cmd) =>
@@ -23,19 +36,21 @@ export const parseCliArgs = (args = process.argv.slice(2)) => {
       'generate-certs [host]',
       'Generate certs with mkcert for one host, or for all hosts when none is passed',
     )
+    .command('mcp', 'Run the MCP server on stdio, for code assistants (Claude Code, Cursor, VS Code…)')
     .strict()
     .help()
     .version(false)
     .locale('en')
-    .parse(args)
+    .parseSync(args)
 
   const [command = 'start'] = argv._
-  const value = { add: argv['host:port'], remove: argv.host, 'generate-certs': argv.host }[command]
+  const values: Record<string, unknown> = { add: argv['host:port'], remove: argv.host, 'generate-certs': argv.host }
+  const value = values[command]
 
-  return {
+  return parsedCommandSchema.parse({
     command,
     value: value === undefined ? undefined : String(value),
     persistHosts: Boolean(argv.persistHosts),
     admin: argv.admin !== false,
-  }
+  })
 }

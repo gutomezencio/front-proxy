@@ -1,5 +1,13 @@
 import fc from 'fast-check'
-import { adminHost, normalizeHost, validateCertName, validateHost, validatePort } from '../src/hosts-validation.js'
+import {
+  adminHost,
+  hostInputSchema,
+  normalizeHost,
+  portSchema,
+  validateCertName,
+  validateHost,
+  validatePort,
+} from '../src/hosts-validation.js'
 
 // Property-based fuzzing: hosts end up in /etc/hosts and cert names in file paths,
 // so whatever passes validation must stay safe for any input.
@@ -40,7 +48,7 @@ describe('hosts validation (fuzz)', () => {
     const host = fc
       .array(label, { minLength: 1, maxLength: 5 })
       .map((labels) => labels.join('.'))
-      .filter((h) => /\D/.test(h.split('.').at(-1)) && h !== 'localhost' && h !== adminHost)
+      .filter((h) => /\D/.test(h.split('.').at(-1) ?? '') && h !== 'localhost' && h !== adminHost)
 
     fc.assert(fc.property(host, (h) => expect(validateHost(h)).toBeNull()))
   })
@@ -94,6 +102,26 @@ describe('hosts validation (fuzz)', () => {
     fc.assert(
       fc.property(host, space, space, fc.boolean(), (h, before, after, dot) => {
         expect(normalizeHost(`${before}${h.toUpperCase()}${dot ? '.' : ''}${after}`)).toBe(h)
+      }),
+    )
+  })
+
+  // The CLI, the admin API and the MCP tools use the schemas; loadProxyHosts uses the wrappers.
+  it('the zod schemas accept exactly what the validators accept', () => {
+    fc.assert(
+      fc.property(tricky(300), (host) => {
+        const parsed = hostInputSchema.safeParse(host)
+
+        expect(parsed.success).toBe(validateHost(normalizeHost(host)) === null)
+        if (parsed.success) expect(parsed.data).toBe(normalizeHost(host))
+      }),
+    )
+    fc.assert(
+      fc.property(fc.oneof(tricky(8), fc.integer(), fc.double()), (port) => {
+        const parsed = portSchema.safeParse(port)
+        const checked = validatePort(port)
+
+        expect(parsed.success ? { port: parsed.data } : { error: parsed.error.issues[0].message }).toEqual(checked)
       }),
     )
   })

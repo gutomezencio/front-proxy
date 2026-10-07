@@ -1,4 +1,5 @@
 import { jest } from '@jest/globals'
+import type { AddressInfo } from 'net'
 import fs from 'fs'
 import net from 'net'
 import os from 'os'
@@ -6,8 +7,9 @@ import tls from 'tls'
 import { join } from 'path'
 import Server from '../src/server.js'
 import { writeCert } from './helpers/certs.js'
+import { failFakeMkcert, writeFakeMkcert } from './helpers/fake-mkcert.js'
 
-const stopSignals = ['SIGINT', 'SIGTERM', 'SIGHUP']
+const stopSignals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGHUP']
 
 // A Server on temp files and random ports, so nothing touches /etc/hosts or binds 80/443.
 const createServer = (dir, proxyHosts = {}) => {
@@ -23,7 +25,7 @@ const createServer = (dir, proxyHosts = {}) => {
   return server
 }
 
-const logged = () => console.log.mock.calls.map(([line]) => line).join('\n')
+const logged = () => jest.mocked(console.log).mock.calls.map(([line]) => line).join('\n')
 
 // The CN of the cert the HTTPS server presents for `servername`.
 const servedCertName = (port, servername) =>
@@ -45,7 +47,7 @@ describe('Server lifecycle', () => {
     jest.spyOn(console, 'log').mockImplementation(() => {})
     jest.spyOn(console, 'warn').mockImplementation(() => {})
     jest.spyOn(console, 'error').mockImplementation(() => {})
-    jest.spyOn(process, 'exit').mockImplementation(() => {})
+    jest.spyOn(process, 'exit').mockImplementation((() => undefined) as never)
   })
 
   afterEach(() => {
@@ -67,7 +69,7 @@ describe('Server lifecycle', () => {
 
     const hosts = fs.readFileSync(server.hostFilePath, 'utf8')
 
-    expect(server.ServerHTTP.info.port).toBeGreaterThan(0)
+    expect(server.ServerHTTP!.info.port).toBeGreaterThan(0)
     expect(server.ServerHTTPS).toBeUndefined()
     expect(hosts).toContain('127.0.0.1 my.local')
     expect(hosts).toContain('127.0.0.1 front-proxy.localhost')
@@ -89,7 +91,7 @@ describe('Server lifecycle', () => {
 
     await server.start({ persistHosts: true, admin: false })
 
-    const { port } = server.ServerHTTPS.info
+    const { port } = server.ServerHTTPS!.info
 
     expect(await servedCertName(port, 'my.local')).toBe('my.local')
     expect(await servedCertName(port, 'other.local')).toBe('localhost')
@@ -112,7 +114,7 @@ describe('Server lifecycle', () => {
     server.saveProxyHosts({ 'my.local': { port: 3000, cert: 'my.local' } })
 
     expect(server.applyConfig()).toEqual({ httpsNeedsRestart: false })
-    expect(await servedCertName(server.ServerHTTPS.info.port, 'my.local')).toBe('my.local')
+    expect(await servedCertName(server.ServerHTTPS!.info.port, 'my.local')).toBe('my.local')
 
     await server.stop()
   })
@@ -133,25 +135,25 @@ describe('Server lifecycle', () => {
     const server = createServer(dir, { 'my.local': { port: 3000, cert: 'missing' } })
 
     expect(server.getSecureContexts()).toEqual({})
-    expect(console.warn.mock.calls[0][0]).toContain('Cert "missing" for my.local not found')
+    expect(jest.mocked(console.warn).mock.calls[0][0]).toContain('Cert "missing" for my.local not found')
   })
 
   it('cleans up and exits with 1 when a port is taken', async () => {
     const blocker = net.createServer()
-    await new Promise((done) => blocker.listen(0, done))
+    await new Promise<void>((done) => blocker.listen(0, done))
 
     const server = createServer(dir, { 'my.local': { port: 3000 } })
 
-    server.ports.http = blocker.address().port
+    server.ports.http = (blocker.address() as AddressInfo).port
 
     try {
       await server.start({ persistHosts: true })
     } finally {
-      await new Promise((done) => blocker.close(done))
+      await new Promise<void>((done) => blocker.close(() => done()))
     }
 
     expect(process.exitCode).toBe(1)
-    expect(console.error.mock.calls[0][0]).toContain("front-proxy couldn't start")
+    expect(jest.mocked(console.error).mock.calls[0][0]).toContain("front-proxy couldn't start")
     // A failed start never keeps the hosts, even with --persist-hosts.
     expect(fs.readFileSync(server.hostFilePath, 'utf8')).toBe('127.0.0.1 localhost\n')
   })
@@ -162,7 +164,7 @@ describe('Server lifecycle', () => {
     server.hostFilePath = join(dir, 'missing', 'hosts')
     await server.stop()
 
-    expect(console.error.mock.calls[0][0]).toContain("Couldn't clean")
+    expect(jest.mocked(console.error).mock.calls[0][0]).toContain("Couldn't clean")
     expect(logged()).toContain('The next start cleans them')
   })
 })
@@ -171,23 +173,12 @@ describe('generateCerts', () => {
   let dir
   let bin
 
-  // Stands in for mkcert: writes the cert files, or fails for fail.local.
-  const fakeMkcert = `#!/usr/bin/env node
-const fs = require('fs')
-const args = process.argv.slice(2)
-if (args[0] === '-help' || args[0] === '-install') process.exit(0)
-const domains = args.slice(4)
-if (domains.includes('fail.local')) { process.stderr.write('mkcert: boom\\n'); process.exit(1) }
-fs.writeFileSync(args[1], 'cert for ' + domains.join(' '))
-fs.writeFileSync(args[3], 'key')
-`
-
   const readKeysFile = (name) => fs.readFileSync(join(dir, `_private-${name}-cert.pem`), 'utf8')
 
   beforeEach(() => {
     dir = fs.mkdtempSync(join(os.tmpdir(), 'front-proxy-'))
     bin = fs.mkdtempSync(join(os.tmpdir(), 'front-proxy-bin-'))
-    fs.writeFileSync(join(bin, 'mkcert'), fakeMkcert, { mode: 0o755 })
+    writeFakeMkcert(bin)
     jest.spyOn(console, 'log').mockImplementation(() => {})
     jest.spyOn(console, 'warn').mockImplementation(() => {})
     jest.spyOn(console, 'error').mockImplementation(() => {})
@@ -230,7 +221,7 @@ fs.writeFileSync(args[3], 'key')
     await server.generateCerts('new.local')
 
     expect(readKeysFile('new.local')).toBe('cert for new.local')
-    expect(console.warn.mock.calls[0][0]).toContain("new.local isn't in the proxy config yet")
+    expect(jest.mocked(console.warn).mock.calls[0][0]).toContain("new.local isn't in the proxy config yet")
     expect(config(server)['new.local']).toBeUndefined()
   })
 
@@ -240,14 +231,14 @@ fs.writeFileSync(args[3], 'key')
     await server.generateCerts(true)
 
     expect(process.exitCode).toBe(1)
-    expect(console.error.mock.calls[0][0]).toContain('mkcert: boom')
+    expect(jest.mocked(console.error).mock.calls[0][0]).toContain('mkcert: boom')
     expect(config(server)['fail.local']).toEqual({ port: 3000 })
   })
 
   it('needs at least one host', async () => {
     await createServer({}).generateCerts(true)
 
-    expect(console.error.mock.calls[0][0]).toContain('No hosts configured')
+    expect(jest.mocked(console.error).mock.calls[0][0]).toContain('No hosts configured')
   })
 
   it('explains how to install mkcert when it is not on the PATH', async () => {
@@ -256,6 +247,52 @@ fs.writeFileSync(args[3], 'key')
     server.mkcertPath = join(bin, 'missing-mkcert')
     await server.generateCerts(true)
 
-    expect(console.error.mock.calls[0][0]).toContain('mkcert was not found')
+    expect(jest.mocked(console.error).mock.calls[0][0]).toContain('mkcert was not found')
+  })
+
+  it('returns what it created, what failed and what is not configured yet', async () => {
+    const server = createServer({ 'my.local': { port: 3000 }, 'fail.local': { port: 4000 } })
+
+    expect(await server.generateCerts(true, { interactive: false })).toEqual({
+      ok: true,
+      created: ['default', 'my.local'],
+      failed: [{ name: 'fail.local', error: 'mkcert: boom' }],
+      notConfigured: [],
+    })
+    expect(await server.generateCerts('new.local', { interactive: false })).toEqual({
+      ok: true,
+      created: ['new.local'],
+      failed: [],
+      notConfigured: ['new.local'],
+    })
+  })
+
+  it('reports a failed default cert and still creates the host certs', async () => {
+    failFakeMkcert(bin, 'default')
+
+    const result = await createServer({ 'my.local': { port: 3000 } }).generateCerts(true)
+
+    expect(result).toMatchObject({ created: ['my.local'], failed: [{ name: 'default', error: 'mkcert: default boom' }] })
+  })
+
+  it('without a terminal, reports a failed mkcert -install instead of prompting', async () => {
+    failFakeMkcert(bin, 'install')
+
+    const server = createServer({ 'my.local': { port: 3000 } })
+    const result = await server.generateCerts(true, { interactive: false })
+
+    expect(result.ok).toBe(false)
+    expect(result).toMatchObject({ error: expect.stringContaining('mkcert: sudo needs a password') })
+    expect((result as { error: string }).error).toContain('Run `mkcert -install` once in a terminal')
+    expect(fs.existsSync(join(dir, '_private-my.local-cert.pem'))).toBe(false)
+  })
+
+  it('reports errors as results too', async () => {
+    const missing = createServer({ 'my.local': { port: 3000 } })
+
+    missing.mkcertPath = join(bin, 'missing-mkcert')
+
+    expect(await missing.generateCerts(true)).toMatchObject({ ok: false, error: expect.stringContaining('mkcert was not found') })
+    expect(await createServer({}).generateCerts(true)).toMatchObject({ ok: false, error: expect.stringContaining('No hosts configured') })
   })
 })

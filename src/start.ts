@@ -25,8 +25,18 @@ const child = spawn(executable, args, {
 
 // Ctrl+C reaches the child too (same process group, and sudo relays it). Wait for it
 // to clean /etc/hosts and exit, instead of giving the prompt back halfway through.
-['SIGINT', 'SIGTERM', 'SIGHUP'].forEach((signal) => process.on(signal, () => {}));
+// A signal sent to this process only (an MCP client stopping `front-proxy mcp`) is passed
+// on to a child that runs as the user; the sudo child can't be signaled from here.
+const forward = !requiresSudo(parsed);
 
-child.on('exit', (code) => {
-  process.exitCode = code;
+(['SIGINT', 'SIGTERM', 'SIGHUP'] as const).forEach((signal) =>
+  process.on(signal, () => {
+    if (forward) {
+      child.kill(signal);
+    }
+  }),
+);
+
+child.on('exit', (code: number | null) => {
+  process.exitCode = code ?? undefined;
 });

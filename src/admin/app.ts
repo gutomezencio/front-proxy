@@ -1,5 +1,5 @@
-// front-proxy admin page. Plain ES module, no build step. The server validates everything
-// again; the checks here only give faster feedback. Data is rendered with textContent only.
+// front-proxy admin page. Compiled by tsc to a plain ES module, no bundler. The server validates
+// everything again; the checks here only give faster feedback. Data is rendered with textContent only.
 
 import { hydrateIcons, icon } from './icons.js';
 import {
@@ -10,17 +10,25 @@ import {
   normalizeHost,
   portProblem,
   portStatusTitle,
+  type DescribedEntry,
+  type HostRow,
+  type PortStatus,
+  type ProxyState,
 } from './lib.js';
 
-const token = document.querySelector('meta[name="front-proxy-token"]').content;
+type State = ProxyState & { httpsNeedsRestart?: boolean };
 
-const $ = (selector) => document.querySelector(selector);
+const token = document.querySelector<HTMLMetaElement>('meta[name="front-proxy-token"]')!.content;
 
-const api = async (method, path, body) => {
-  const options = { method, headers: { 'X-Front-Proxy-Token': token } };
+// Every element the page looks up is in index.html.
+const $ = <T extends HTMLElement = HTMLElement>(selector: string) => document.querySelector<T>(selector)!;
+
+const api = async <T = State>(method: string, path: string, body?: unknown): Promise<T> => {
+  const headers: Record<string, string> = { 'X-Front-Proxy-Token': token };
+  const options: RequestInit = { method, headers };
 
   if (method !== 'GET') {
-    options.headers['Content-Type'] = 'application/json';
+    headers['Content-Type'] = 'application/json';
     options.body = JSON.stringify(body ?? {});
   }
 
@@ -34,35 +42,53 @@ const api = async (method, path, body) => {
   return data;
 };
 
-const el = (tag, props = {}, ...children) => {
-  const node = Object.assign(document.createElement(tag), props);
+type Child = Node | string | null | undefined;
+
+// `props` are element properties (className, textContent, href…), assigned as is.
+const el = <K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  props: Record<string, unknown> = {},
+  ...children: Child[]
+): HTMLElementTagNameMap[K] => {
+  const node = document.createElement(tag);
+  Object.assign(node, props);
   node.append(
-    ...children.filter((child) => child !== null && child !== undefined),
+    ...children.filter((child): child is Node | string => child !== null && child !== undefined),
   );
   return node;
 };
 
 // A button (or link, with `tag`) with an icon before its label.
-const withIcon = (name, label, props = {}, tag = 'button') =>
+const withIcon = (
+  name: string,
+  label: string,
+  props: Record<string, unknown> = {},
+  tag: 'button' | 'a' = 'button',
+) =>
   el(
-    tag,
+    // Typed as a button: callers only use what both elements share.
+    tag as 'button',
     { ...(tag === 'button' ? { type: 'button' } : {}), ...props },
     icon(name),
     el('span', { textContent: label }),
   );
 
-const chip = (name, label, className) =>
+const chip = (name: string, label: string, className: string) =>
   el('span', { className: `chip ${className}` }, icon(name), label);
 
-let state = null;
-let ports = {};
-let editing = null;
-let messageTimer = null;
+let state: State | null = null;
+let ports: Record<string, PortStatus> = {};
+let editing: string | null = null;
+let messageTimer: ReturnType<typeof setTimeout> | undefined;
 
 // Success messages hide after 5s, unless `sticky`. `tip` adds a second line with an info icon.
 const showMessage = (
-  text,
-  { error = false, sticky = false, tip = null } = {},
+  text: string,
+  {
+    error = false,
+    sticky = false,
+    tip = null,
+  }: { error?: boolean; sticky?: boolean; tip?: string | null } = {},
 ) => {
   const message = $('#message');
   const body = el('div', {}, el('span', { textContent: text }));
@@ -92,7 +118,7 @@ const browserRestartTip =
   'If the browser still says "Not secure" for a domain, fully quit it and open it again (on macOS, Cmd+Q, not just closing the window).';
 
 // A hint icon with a Pico tooltip, also readable by screen readers and keyboard focus.
-const hint = (text) => {
+const hint = (text: string) => {
   const node = el(
     'span',
     { className: 'hint', tabIndex: 0, ariaLabel: text },
@@ -102,16 +128,16 @@ const hint = (text) => {
   return node;
 };
 
-const copyLink = (text, label) => {
+const copyLink = (text: string, label: string) => {
   const link = withIcon(
     'copy',
     label,
     { href: '#', className: 'copy-link', title: text },
     'a',
   );
-  const setLabel = (name, value) =>
+  const setLabel = (name: string, value: string) =>
     link.replaceChildren(icon(name), el('span', { textContent: value }));
-  link.addEventListener('click', async (event) => {
+  link.addEventListener('click', async (event: Event) => {
     event.preventDefault();
     try {
       await navigator.clipboard.writeText(text);
@@ -124,7 +150,7 @@ const copyLink = (text, label) => {
   return link;
 };
 
-const certCell = (host, { cert, certStatus }) => {
+const certCell = (host: string, { cert, certStatus }: DescribedEntry) => {
   const command = `front-proxy generate-certs ${host}`;
 
   if (certStatus === 'own') {
@@ -165,13 +191,13 @@ const certCell = (host, { cert, certStatus }) => {
   return el('td', {}, el('div', { className: 'cert-cell' }, label, note));
 };
 
-const portCell = ({ host, config, active, change }) => {
-  if (editing === host) {
+const portCell = ({ host, config, active, change, entry }: HostRow) => {
+  if (editing === host && config) {
     const input = el('input', {
       type: 'number',
-      min: 1,
-      max: 65535,
-      value: config.port,
+      min: '1',
+      max: '65535',
+      value: String(config.port),
       ariaLabel: `Port for ${host}`,
     });
     const save = withIcon('check', 'Save', { type: 'submit' });
@@ -188,7 +214,7 @@ const portCell = ({ host, config, active, change }) => {
       editing = null;
       render();
     });
-    form.addEventListener('submit', async (event) => {
+    form.addEventListener('submit', async (event: SubmitEvent) => {
       event.preventDefault();
       const problem = portProblem(input.value);
       if (problem) return showMessage(problem, { error: true });
@@ -200,7 +226,7 @@ const portCell = ({ host, config, active, change }) => {
         render();
         showMessage(`${host} now points to port ${input.value}.`);
       } catch (err) {
-        showMessage(err.message, { error: true });
+        showMessage((err as Error).message, { error: true });
       }
     });
     queueMicrotask(() => input.focus());
@@ -209,16 +235,16 @@ const portCell = ({ host, config, active, change }) => {
   }
 
   const cell = el('td');
-  if (change === 'changed' && active.port !== config.port) {
+  if (change === 'changed' && active && active.port !== entry.port) {
     cell.append(
       el('span', { className: 'old-port', textContent: `:${active.port}` }),
     );
   }
-  cell.append(`:${(config ?? active).port}`);
+  cell.append(`:${entry.port}`);
   return cell;
 };
 
-const openLink = (protocol, host) =>
+const openLink = (protocol: string, host: string) =>
   withIcon(
     'external',
     protocol.toUpperCase(),
@@ -230,18 +256,15 @@ const openLink = (protocol, host) =>
     'a',
   );
 
-const linksCell = (row) => {
-  if (!row.active) return el('td', { className: 'muted', textContent: '—' });
+const linksCell = (row: HostRow) => {
+  if (!row.active || !state) return el('td', { className: 'muted', textContent: '—' });
 
-  const links = el(
-    'td',
-    {},
-    el('div', { className: 'links' }, openLink('http', row.host)),
-  );
+  const linkList = el('div', { className: 'links' }, openLink('http', row.host));
+  const links = el('td', {}, linkList);
   const problem = httpsProblem(row, state.https);
 
   if (!problem) {
-    links.firstChild.append(openLink('https', row.host));
+    linkList.append(openLink('https', row.host));
     return links;
   }
 
@@ -253,13 +276,13 @@ const linksCell = (row) => {
   );
   disabled.setAttribute('aria-disabled', 'true');
 
-  links.firstChild.append(
+  linkList.append(
     el('span', { className: 'with-hint' }, disabled, hint(problem)),
   );
   return links;
 };
 
-const actionsCell = (row) => {
+const actionsCell = (row: HostRow) => {
   const cell = el('td');
   const actions = el('div', { className: 'cell-actions' });
 
@@ -280,13 +303,13 @@ const actionsCell = (row) => {
   return cell;
 };
 
-const changeLabels = {
+const changeLabels: Record<string, string> = {
   added: 'Pending add',
   removed: 'Pending removal',
   changed: 'Pending change',
 };
 
-const render = () => {
+const render = (): void => {
   if (!state) return;
 
   const https = $('#https-status');
@@ -345,8 +368,8 @@ const render = () => {
 };
 
 const updateDots = () => {
-  document.querySelectorAll('.dot[data-host]').forEach((dot) => {
-    const status = ports[dot.dataset.host];
+  document.querySelectorAll<HTMLElement>('.dot[data-host]').forEach((dot) => {
+    const status = ports[String(dot.dataset.host)];
     dot.className = `dot ${status ?? ''}`;
   });
 };
@@ -357,11 +380,11 @@ const loadState = async () => {
     const next = await api('GET', '/api/state');
     const changed = JSON.stringify(next) !== JSON.stringify(state);
     state = next;
-    if (editing && !state.config[editing]) editing = null;
+    if (editing && !next.config[editing]) editing = null;
     if (changed) render();
   } catch (err) {
     showMessage(
-      `Couldn't load the hosts: ${err.message}. Is front-proxy running?`,
+      `Couldn't load the hosts: ${(err as Error).message}. Is front-proxy running?`,
       { error: true },
     );
   }
@@ -369,48 +392,51 @@ const loadState = async () => {
 
 const loadPorts = async () => {
   try {
-    ports = await api('GET', '/api/status');
+    ports = await api<Record<string, PortStatus>>('GET', '/api/status');
     updateDots();
   } catch {
     // The next poll tries again.
   }
 };
 
-const confirmRemove = (host) => {
-  const dialog = $('#confirm-remove');
+const confirmRemove = (host: string) => {
+  const dialog = $<HTMLDialogElement>('#confirm-remove');
   $('#confirm-host').textContent = host;
   dialog.dataset.host = host;
   dialog.showModal();
 };
 
-$('#confirm-remove').addEventListener('click', (event) => {
-  if (
-    event.target.matches('[data-close]') ||
-    event.target === event.currentTarget
-  ) {
-    event.currentTarget.close();
+$<HTMLDialogElement>('#confirm-remove').addEventListener('click', (event) => {
+  const dialog = event.currentTarget as HTMLDialogElement;
+  const target = event.target as Element;
+  if (target.matches('[data-close]') || target === dialog) {
+    dialog.close();
   }
 });
 
 $('#confirm-remove-button').addEventListener('click', async () => {
-  const dialog = $('#confirm-remove');
-  const { host } = dialog.dataset;
+  const dialog = $<HTMLDialogElement>('#confirm-remove');
+  const host = String(dialog.dataset.host);
   dialog.close();
   try {
     state = await api('DELETE', `/api/hosts/${encodeURIComponent(host)}`);
     render();
     showMessage(`${host} removed from the config.`);
   } catch (err) {
-    showMessage(err.message, { error: true });
+    showMessage((err as Error).message, { error: true });
   }
 });
 
 $('#add-form').addEventListener('submit', async (event) => {
   event.preventDefault();
-  const form = event.currentTarget;
-  const host = normalizeHost(form.elements.host.value);
+  const form = event.currentTarget as HTMLFormElement;
+  const fields = form.elements as HTMLFormControlsCollection & {
+    host: HTMLInputElement;
+    port: HTMLInputElement;
+  };
+  const host = normalizeHost(fields.host.value);
   const problem =
-    hostProblem(host, state?.adminHost) || portProblem(form.elements.port.value);
+    hostProblem(host, state?.adminHost) || portProblem(fields.port.value);
   const errorLine = $('#add-error');
 
   if (problem) {
@@ -423,7 +449,7 @@ $('#add-form').addEventListener('submit', async (event) => {
   try {
     state = await api('POST', '/api/hosts', {
       host,
-      port: Number(form.elements.port.value),
+      port: Number(fields.port.value),
     });
     form.reset();
     render();
@@ -432,13 +458,13 @@ $('#add-form').addEventListener('submit', async (event) => {
       `${host} added. Apply the changes or restart front-proxy to use it.`,
     );
   } catch (err) {
-    errorLine.textContent = err.message;
+    errorLine.textContent = (err as Error).message;
     errorLine.hidden = false;
   }
 });
 
 $('#apply').addEventListener('click', async (event) => {
-  const button = event.currentTarget;
+  const button = event.currentTarget as HTMLButtonElement;
   button.setAttribute('aria-busy', 'true');
   button.disabled = true;
   try {
@@ -461,7 +487,7 @@ $('#apply').addEventListener('click', async (event) => {
       );
     }
   } catch (err) {
-    showMessage(err.message, { error: true });
+    showMessage((err as Error).message, { error: true });
   } finally {
     button.removeAttribute('aria-busy');
     button.disabled = false;
