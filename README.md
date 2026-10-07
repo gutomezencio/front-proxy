@@ -125,23 +125,36 @@ For HTTPS on the admin page, the default certificate must include `front-proxy.l
 
 ## MCP server
 
-`front-proxy mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io) server on stdio, so code assistants (Claude Code, Cursor, VS Code, Windsurf…) can manage your domains for you. For example, they can map the app they just started to a domain and check that it answers.
+`front-proxy mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io) server on stdio, so code assistants (Claude Code, Cursor, VS Code, Codex, Windsurf…) can manage your domains for you. For example, they can map the app they just started to a domain and check that it answers. It's listed in the [MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.gutomezencio/front-proxy`.
 
-Add it to Claude Code:
+[![Add to Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/install-mcp?name=front-proxy&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImZyb250LXByb3h5IiwibWNwIl19)
+[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_MCP_server-0098FF?logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect?url=vscode%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522front-proxy%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522-y%2522%252C%2522front-proxy%2522%252C%2522mcp%2522%255D%257D)
+[![Download for Claude Desktop](https://img.shields.io/badge/Claude_Desktop-Download_.mcpb-D97757?logo=claude&logoColor=white)](https://github.com/gutomezencio/front-proxy/releases/latest/download/front-proxy.mcpb)
+
+**Claude Code**: install the plugin, which adds the MCP server and a skill that tells Claude when front-proxy helps (allowlisted domains, CORS, cookies, local HTTPS):
 
 ```bash
-claude mcp add front-proxy -- front-proxy mcp
+claude plugin marketplace add gutomezencio/front-proxy
+claude plugin install front-proxy@front-proxy
 ```
 
-Other clients take the same command in their MCP config:
+Or add only the MCP server: `claude mcp add front-proxy -- npx -y front-proxy mcp`.
+
+**Claude Desktop**: download [`front-proxy.mcpb`](https://github.com/gutomezencio/front-proxy/releases/latest/download/front-proxy.mcpb) from the latest release and open it.
+
+**Codex**: `codex mcp add front-proxy -- npx -y front-proxy mcp`.
+
+**Other clients** take the same command in their MCP config:
 
 ```json
 {
   "mcpServers": {
-    "front-proxy": { "command": "front-proxy", "args": ["mcp"] }
+    "front-proxy": { "command": "npx", "args": ["-y", "front-proxy", "mcp"] }
   }
 }
 ```
+
+If you installed `front-proxy` globally, `front-proxy mcp` works too. Both share the config in `~/.front-proxy`, but the proxy itself still runs from the global install (see below).
 
 | Tool             | What it does                                                                                         |
 | ---------------- | ---------------------------------------------------------------------------------------------------- |
@@ -241,6 +254,7 @@ npm run typecheck            # type-check src/ and test/
 npm test                     # run the tests (Jest with ts-jest, straight from src/)
 npm run test:coverage        # same, with coverage (fails below the thresholds in package.json)
 npm pack --dry-run           # list the files that get published to npm
+npm run build:mcpb           # build front-proxy.mcpb, the Claude Desktop bundle
 ```
 
 The code is TypeScript (strict, native ES modules) with [zod](https://zod.dev) schemas for everything it validates. `tsc` compiles it to `dist/`, and `npm pack`/`npm publish` build it first (the `prepack` script). Only `dist/`, `README.md`, `LICENSE` and `package.json` are published (the `files` field in `package.json`).

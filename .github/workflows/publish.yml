@@ -1,9 +1,11 @@
 name: Publish
 
 # Runs when a release PR from prepare-release.yml is merged: publishes the
-# package.json version if npm doesn't have it yet, then creates the release.
-# The release carries the published tarball and its Sigstore provenance bundle.
-# npm's trusted publisher is configured for this file name, so keep it.
+# package.json version if npm doesn't have it yet, then creates the release and
+# lists that version in the MCP Registry. The release carries the published
+# tarball, the Claude Desktop bundle (front-proxy.mcpb) and their Sigstore
+# provenance bundle. npm's trusted publisher is configured for this file name,
+# so keep it.
 on:
   push:
     branches: [main]
@@ -21,7 +23,8 @@ jobs:
     permissions:
       # Create the tag and the GitHub release
       contents: write
-      # OIDC token for npm trusted publishing (no NPM_TOKEN secret) and for signing
+      # OIDC token for npm trusted publishing (no NPM_TOKEN secret), for signing
+      # and for the MCP Registry login (github-oidc)
       id-token: write
       # Store the build provenance attestation
       attestations: write
@@ -60,12 +63,20 @@ jobs:
       - if: steps.check.outputs.published == 'false'
         run: npm publish "./${{ steps.pack.outputs.tarball }}"
 
-      - name: Sign the tarball
+      # One-click bundle for Claude Desktop, with the same name in every release so
+      # releases/latest/download/front-proxy.mcpb always points to the newest one
+      - name: Build the MCP bundle
+        if: steps.check.outputs.published == 'false'
+        run: npm run build:mcpb
+
+      - name: Sign the tarball and the MCP bundle
         id: attest
         if: steps.check.outputs.published == 'false'
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: ${{ steps.pack.outputs.tarball }}
+          subject-path: |
+            ${{ steps.pack.outputs.tarball }}
+            front-proxy.mcpb
 
       - name: Create the GitHub release
         if: steps.check.outputs.published == 'false'
@@ -76,4 +87,24 @@ jobs:
         run: |
           cp "$BUNDLE" "$TARBALL.sigstore.json"
           gh release create "v${{ steps.check.outputs.version }}" --target "$GITHUB_SHA" --generate-notes \
-            "$TARBALL" "$TARBALL.sigstore.json"
+            "$TARBALL" "$TARBALL.sigstore.json" front-proxy.mcpb
+
+      # Lists this version in the official MCP Registry (server.json). The registry checks
+      # ownership through "mcpName" in the npm package just published. mcp-publisher is
+      # pinned and checked against the release's checksum.
+      - name: Install mcp-publisher
+        if: steps.check.outputs.published == 'false'
+        env:
+          VERSION: 1.8.1
+          SHA256: a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc
+        run: |
+          curl -fsSL -o mcp-publisher.tar.gz \
+            "https://github.com/modelcontextprotocol/registry/releases/download/v$VERSION/mcp-publisher_linux_amd64.tar.gz"
+          echo "$SHA256  mcp-publisher.tar.gz" | sha256sum --check
+          tar xzf mcp-publisher.tar.gz mcp-publisher
+      - name: Publish to the MCP Registry
+        if: steps.check.outputs.published == 'false'
+        run: |
+          ./mcp-publisher validate
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish

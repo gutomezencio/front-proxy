@@ -1,13 +1,14 @@
 {
   "name": "front-proxy",
   "version": "0.7.1",
+  "mcpName": "io.github.gutomezencio/front-proxy",
   "type": "module",
   "license": "MIT",
   "author": {
     "name": "Guto Mezêncio",
     "email": "gutomezencio@gmail.com"
   },
-  "description": "Map/link custom local domains to apps running on local ports, at the OS level.",
+  "description": "Map/link custom local domains to apps running on local ports, at the OS level. Includes an MCP server so code assistants can manage the domains.",
   "keywords": [
     "local-domain",
     "hosts",
@@ -19,7 +20,10 @@
     "localhost",
     "cli",
     "mcp",
-    "model-context-protocol"
+    "model-context-protocol",
+    "mcp-server",
+    "claude-code",
+    "ai-agents"
   ],
   "homepage": "https://github.com/gutomezencio/front-proxy#readme",
   "repository": {
@@ -37,7 +41,9 @@
     "start": "npm run build && node dist/proxy-server.js",
     "start:root": "npm run build && node dist/start.js",
     "test": "node --experimental-vm-modules --no-warnings=ExperimentalWarning node_modules/jest/bin/jest.js",
-    "test:coverage": "npm test -- --coverage"
+    "test:coverage": "npm test -- --coverage",
+    "build:mcpb": "npm run build && node scripts/build-mcpb.js",
+    "sync-version": "node scripts/sync-version.js"
   },
   "bin": {
     "front-proxy": "dist/bin-running.js"
@@ -77,7 +83,11 @@
         "functions": 100,
         "lines": 99.9
       }
-    }
+    },
+    "modulePathIgnorePatterns": [
+      "<rootDir>/dist/",
+      "<rootDir>/mcpb/"
+    ]
   },
   "dependencies": {
     "@hapi/h2o2": "^10.0.4",
@@ -94,6 +104,7 @@
     "linux"
   ],
   "devDependencies": {
+    "@anthropic-ai/mcpb": "^2.1.2",
     "@jest/globals": "^30.5.2",
     "@types/jest": "^30.0.0",
     "@types/node": "^22.20.5",
