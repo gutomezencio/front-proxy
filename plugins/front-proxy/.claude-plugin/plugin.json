@@ -1,7 +1,7 @@
 {
   "name": "front-proxy",
   "displayName": "front-proxy",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Map local domains (and HTTPS) to apps on local ports, OS-wide. Adds the front-proxy MCP server and a skill that knows when to use it.",
   "author": {
     "name": "Guto Mezêncio",
