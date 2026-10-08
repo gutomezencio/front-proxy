@@ -8,13 +8,13 @@
     "url": "https://github.com/gutomezencio/front-proxy",
     "source": "github"
   },
-  "version": "0.8.0",
+  "version": "0.8.1",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "front-proxy",
-      "version": "0.8.0",
+      "version": "0.8.1",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
