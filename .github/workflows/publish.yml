@@ -102,9 +102,35 @@ jobs:
             "https://github.com/modelcontextprotocol/registry/releases/download/v$VERSION/mcp-publisher_linux_amd64.tar.gz"
           echo "$SHA256  mcp-publisher.tar.gz" | sha256sum --check
           tar xzf mcp-publisher.tar.gz mcp-publisher
+      # The MCP Registry checks that the version exists on npm, and a version just
+      # published can take a few minutes to show up there.
+      - name: Wait for npm to serve this version
+        if: steps.check.outputs.published == 'false'
+        env:
+          VERSION: ${{ steps.check.outputs.version }}
+        run: |
+          for _ in $(seq 30); do
+            if curl -fsS -o /dev/null "https://registry.npmjs.org/front-proxy/$VERSION"; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::front-proxy@$VERSION still isn't on registry.npmjs.org after 5 minutes"
+          exit 1
+      # npm's CDN is regional, so the registry's servers can still get a 404 after the
+      # runner sees the version: retry the publish a few times.
       - name: Publish to the MCP Registry
         if: steps.check.outputs.published == 'false'
         run: |
           ./mcp-publisher validate
           ./mcp-publisher login github-oidc
-          ./mcp-publisher publish
+          for attempt in 1 2 3 4 5; do
+            if ./mcp-publisher publish; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 5 ]; then
+              echo "Publish failed (attempt $attempt of 5), retrying in 30s"
+              sleep 30
+            fi
+          done
+          exit 1
