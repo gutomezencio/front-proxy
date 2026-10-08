@@ -34,7 +34,7 @@
     "url": "https://github.com/gutomezencio/front-proxy/issues"
   },
   "scripts": {
-    "build": "rm -rf dist && tsc -p tsconfig.build.json && node scripts/copy-admin-assets.js",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && node scripts/copy-admin-assets.js && chmod 755 dist/bin-running.js",
     "typecheck": "tsc -p tsconfig.json && tsc -p test/tsconfig.json",
     "prepack": "npm run build",
     "dev": "npm run build && (tsc -p tsconfig.build.json --watch --preserveWatchOutput & node --watch-path=dist dist/proxy-server.js)",
